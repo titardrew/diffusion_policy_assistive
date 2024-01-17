@@ -1,0 +1,3 @@
+[submodule "submodules/assistive-gym"]
+	path = submodules/assistive-gym
+	url = https://github.com/titardrew/assistive-gym
