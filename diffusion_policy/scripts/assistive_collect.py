@@ -110,7 +110,8 @@ def collect_with_policy(
         fps = 10
         cam_w = 1920 // 4
         cam_h = 1080 // 4
-        writer = cv2.VideoWriter(str(Path(output_path).parent / (Path(output_path).stem + "_rec.mp4")), fourcc, fps, (cam_w, cam_h))
+        video_path = Path(output_path).parent / (Path(output_path).stem + "_rec.mp4")
+        writer = cv2.VideoWriter(str(video_path), fourcc, fps, (cam_w, cam_h))
         env.setup_camera(camera_eye=[0.5, -0.75, 1.5], camera_target=[-0.2, 0, 0.75], fov=60, camera_width=cam_w, camera_height=cam_h)
 
     test_agent, _ = load_policy(env, algo, env_name, policy_path, coop, seed, extra_configs)
@@ -121,6 +122,9 @@ def collect_with_policy(
     task_successes = []
     n_collected_episodes = 0
     n_tries = 0
+    n_failures = 0
+    n_successes = 0
+    print(f"----------------------")
     while n_collected_episodes < n_episodes:
         n_tries += 1
         if n_tries >= 50:
@@ -161,24 +165,32 @@ def collect_with_policy(
             if n_episodes_render > 0:
                 # Capture (render) an image from the camera
                 img, depth = env.get_camera_image_depth()
-                writer.write(img)
+                print(img.shape)
+                writer.write(img[..., :3])
 
 
         if task_success > 0.0:
             n_collected_episodes += 1
-            n_tries = 0
             buffer.add_episode({
                 'state': np.array(state_history),
                 'action': np.array(action_history),
                 'reward': np.array(reward_history),
             })
-            print(n_collected_episodes)
-        print(n_collected_episodes)
+            print(f"Collected: {n_collected_episodes}/{n_episodes}")
+            print(f"Episode len: {len(state_history)}")
+            print(f"Tries: {n_tries}")
+            print(f"----------------------")
+            n_failures += n_tries - 1
+            n_successes += 1
+            n_tries = 0
         if n_episodes_render > 0:
             n_episodes_render -= 1
             if n_episodes_render == 0:
                 writer.release()
-        print(reward_total)
+                mb = (video_path.stat().st_size / 10**6)
+                print(f"[Viz] Rendered all. Filesize: {mb} Mb.")
+                print(f"----------------------")
+        #print(reward_total)
         rewards.append(reward_total)
         forces.append(np.mean(force_list))
         task_successes.append(task_success)
@@ -199,6 +211,7 @@ def collect_with_policy(
     print('Force Mean:', np.mean(forces))
     print('Force Std:', np.std(forces))
 
+    print('Task Failure Rate (%):', n_failures / (n_successes + n_failures) * 100)
     # print('Task Successes:', task_successes)
     print('Task Success Mean:', np.mean(task_successes))
     print('Task Success Std:', np.std(task_successes))
