@@ -11,6 +11,7 @@ from ray.rllib.algorithms.algorithm import Algorithm
 
 from ray.rllib.utils import check_env
 from ray.tune.logger import pretty_print
+#import ray.rllib.core
 from numpngw import write_apng
 import assistive_gym
 
@@ -47,7 +48,8 @@ def setup_config(env, algo, coop=False, seed=0, extra_configs={}):
 
 def load_policy(env, algo, env_name, policy_path=None, coop=False, seed=0, extra_configs={}):
     if algo == 'ppo':
-        agent = ppo.PPO(setup_config(env, algo, coop, seed, extra_configs), 'assistive_gym:'+env_name)
+        agent = Algorithm.from_checkpoint(policy_path)
+        #agent = ppo.PPO(setup_config(env, algo, coop, seed, extra_configs), 'assistive_gym:'+env_name)
         #agent = ppo.PPO(ppo.PPOConfig(), 'assistive_gym:' + env_name)
     elif algo == 'sac':
         agent = Algorithm.from_checkpoint(policy_path)
@@ -166,9 +168,9 @@ def collect_with_policy(
             n_collected_episodes += 1
             n_tries = 0
             buffer.add_episode({
-                'state': state_history,
-                'action': action_history,
-                'reward': reward_history,
+                'state': np.array(state_history),
+                'action': np.array(action_history),
+                'reward': np.array(reward_history),
             })
             print(n_collected_episodes)
         print(n_collected_episodes)

@@ -38,7 +38,8 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             crf=22,
             past_action=False,
             tqdm_interval_sec=5.0,
-            n_envs=None
+            n_envs=None,
+            **kwargs,
         ):
         super().__init__(output_dir)
 

@@ -10,7 +10,7 @@ from diffusion_policy.model.common.normalizer import LinearNormalizer
 from diffusion_policy.dataset.base_dataset import BaseImageDataset
 from diffusion_policy.common.normalize_util import get_image_range_normalizer
 
-class AssistiveDataset(BaseImageDataset):
+class AssistiveLowdimDataset(BaseImageDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
@@ -86,11 +86,17 @@ class AssistiveDataset(BaseImageDataset):
 
 def test():
     from pathlib import Path
-    zarr_path = Path('~/assistive_data/sac/feeding_jaco_v1_replay.zarr')
-    dataset = AssistiveDataset(str(zarr_path), horizon=16)
+    ROOT_DIR = Path(__file__).absolute().parent.parent.parent
+    zarr_path = ROOT_DIR / "tmp_dataset" / "ppo.zarr"
+    dataset = AssistiveLowdimDataset(str(zarr_path), horizon=16)
+    import ipdb
+    ipdb.set_trace()
 
     # from matplotlib import pyplot as plt
     # normalizer = dataset.get_normalizer()
     # nactions = normalizer['action'].normalize(dataset.replay_buffer['action'])
     # diff = np.diff(nactions, axis=0)
     # dists = np.linalg.norm(np.diff(nactions, axis=0), axis=-1)
+
+if __name__ == "__main__":
+    test()
