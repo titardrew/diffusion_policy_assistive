@@ -86,10 +86,9 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             enable_render = i < n_train_vis
 
             def init_fn(env, init_qpos=None, init_qvel=None, enable_render=enable_render):
-                from assitive_gym.envs.env import AssistiveEnv
                 # setup rendering
                 # video_wrapper
-                assert isinstance(env.env, VideoRecordingWrapper)
+                assert isinstance(env.env, VideoRecordingWrapper), env.env
                 env.env.video_recoder.stop()
                 env.env.file_path = None
                 if enable_render:
@@ -99,11 +98,10 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                     filename = str(filename)
                     env.env.file_path = filename
 
-                assert isinstance(env.env.env, AssistiveEnv)
-                # set initial condition
-                #env.env.env.init_qpos = init_qpos
-                #env.env.env.init_qvel = init_qvel
-            
+                #TODO(aty): it's actually <TimeLimit<FeedingJacoEnv<FeedingJaco-v1>>>, check that instead!
+                #from assistive_gym.envs.env import AssistiveEnv
+                #assert isinstance(env.env.env, AssistiveEnv), env.env.env
+
             env_seeds.append(seed)
             env_prefixs.append('train/')
             env_init_fn_dills.append(dill.dumps(init_fn))
@@ -114,10 +112,9 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             enable_render = i < n_test_vis
 
             def init_fn(env, seed=seed, enable_render=enable_render):
-                from assitive_gym.envs.env import AssistiveEnv
                 # setup rendering
                 # video_wrapper
-                assert isinstance(env.env, VideoRecordingWrapper)
+                assert isinstance(env.env, VideoRecordingWrapper), env.env
                 env.env.video_recoder.stop()
                 env.env.file_path = None
                 if enable_render:
@@ -127,13 +124,12 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                     filename = str(filename)
                     env.env.file_path = filename
 
-                assert isinstance(env.env.env, AssistiveEnv)
-                # set initial condition
-                #env.env.env.init_qpos = None
-                #env.env.env.init_qvel = None
+                #TODO(aty): it's actually <TimeLimit<FeedingJacoEnv<FeedingJaco-v1>>>, check that instead!
+                #from assistive_gym.envs.env import AssistiveEnv
+                #assert isinstance(env.env.env, AssistiveEnv), env.env.env
 
                 # set seed
-                assert isinstance(env, MultiStepWrapper)
+                assert isinstance(env, MultiStepWrapper), env
                 env.seed(seed)
             
             env_seeds.append(seed)
@@ -184,7 +180,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             n_diff = n_envs - len(this_init_fns)
             if n_diff > 0:
                 this_init_fns.extend([self.env_init_fn_dills[0]]*n_diff)
-            assert len(this_init_fns) == n_envs
+            assert len(this_init_fns) == n_envs, (len(this_init_fns), n_envs)
 
             # init envs
             env.call_each('run_dill_function', 
@@ -243,7 +239,8 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
         # log
         log_data = dict()
         prefix_total_reward_map = collections.defaultdict(list)
-        prefix_n_completed_map = collections.defaultdict(list)
+        prefix_success_map = collections.defaultdict(list)
+        #prefix_mean_forces_map = collections.defaultdict(list)
         # results reported in the paper are generated using the commented out line below
         # which will only report and average metrics from first n_envs initial condition and seeds
         # fortunately this won't invalidate our conclusion since
@@ -256,12 +253,13 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
             this_rewards = all_rewards[i]
-            # NOTE(aty): why 7???
-            total_reward = np.sum(this_rewards) / 7
+            total_reward = np.sum(this_rewards)
             prefix_total_reward_map[prefix].append(total_reward)
 
-            n_completed_tasks = len(last_info[i]['completed_tasks'])
-            prefix_n_completed_map[prefix].append(n_completed_tasks)
+            task_success = last_info[i]['task_success']
+            prefix_success_map[prefix].append(task_success)
+            #mean_force_on_human = last_info[i]['total_force_on_human_sum'] / len(this_rewards)
+            #prefix_mean_forces_map[prefix].append(mean_force_on_human)
 
             # visualize sim
             video_path = all_video_paths[i]
@@ -271,15 +269,20 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
         # log aggregate metrics
         for prefix, value in prefix_total_reward_map.items():
-            name = prefix+'mean_score'
+            name = prefix + 'mean_score'
             value = np.mean(value)
             log_data[name] = value
-        for prefix, value in prefix_n_completed_map.items():
-            n_completed = np.array(value)
-            for i in range(7):
-                n = i + 1
-                p_n = np.mean(n_completed >= n)
-                name = prefix + f'p_{n}'
-                log_data[name] = p_n
+
+        for prefix, value in prefix_success_map.items():
+            success = np.array(value)
+            name = prefix + f'success'
+            log_data[name] = np.mean(success)
+
+        """
+        for prefix, value in prefix_mean_forces_map.items():
+            mean_forces = np.array(value)
+            name = prefix + f'mean_mean_forces'
+            log_data[name] = np.mean(mean_forces)
+        """
 
         return log_data

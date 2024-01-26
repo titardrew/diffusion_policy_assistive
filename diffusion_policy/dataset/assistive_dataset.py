@@ -7,10 +7,10 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
 from diffusion_policy.model.common.normalizer import LinearNormalizer
-from diffusion_policy.dataset.base_dataset import BaseImageDataset
+from diffusion_policy.dataset.base_dataset import BaseLowdimDataset
 from diffusion_policy.common.normalize_util import get_image_range_normalizer
 
-class AssistiveLowdimDataset(BaseImageDataset):
+class AssistiveLowdimDataset(BaseLowdimDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
@@ -58,13 +58,9 @@ class AssistiveLowdimDataset(BaseImageDataset):
         return val_set
 
     def get_normalizer(self, mode='limits', **kwargs):
-        data = {
-            'action': self.replay_buffer['action'],
-            'agent_pos': self.replay_buffer['state'][...,:2]
-        }
+        data = self._sample_to_data(self.replay_buffer)
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
-        normalizer['image'] = get_image_range_normalizer()
         return normalizer
 
     def __len__(self) -> int:

@@ -25,7 +25,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.assistive_dataset.AssistiveLowdimDataset
-  zarr_path: tmp_dataset/ppo.zarr
+  zarr_path: tmp_dataset/ppo_150.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
