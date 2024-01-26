@@ -1,0 +1,32 @@
+# ---- DATA COLLECTION ----
+
+    # collect a ppo_150 dataset with the ppo model
+PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/ppo_150.zarr --load-policy-path ./submodules/assistive-gym/trained_models/ppo/FeedingJaco-v1/checkpoint_000053/ --algo ppo --env FeedingJaco-v1 --episodes 150
+
+    # collect a sac_150 dataset with the sac model
+    PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/sac_150.zarr --load-policy-path ./submodules/assistive-gym/trained_models/sac/FeedingJaco-v1/checkpoint_005163/ --algo sac --env FeedingJaco-v1 --episodes 150
+
+
+# ---- GDRIVE ----
+
+    # Import creds
+./gdrive account import gdrive_export-titarenkoan_gmail_com.tar
+
+    # Make experiment dir, parent is always the same
+./gdrive files mkdir --parent 1nv575YO-_CkBa9eljwhqvCKxEtvMzPqJ Jan25_First_Run
+
+    # Upload a checkpoint, parent id is output by the mkdir
+./gdrive files upload --parent 1tdh25aw4JadSiBXj5gyCFU1ER1PFRBkM --recursive diffusion_policy_assistive/data/outputs/2024.01.25/09.27.05_train_diffusion_transformer_lowdim_assistive_feeding_jaco_lowdim/checkpoints/
+
+    # Upload a dataset, parent id is always the same
+./gdrive files upload --parent 1tndEZ3m_MpQ68DxWK-PTEd9I6UPYRyht --recursive diffusion_policy_assistive/tmp_dataset/ppo_150.zarr
+
+
+# ---- TRAIN DIFFUSION ----
+
+    # Jan 26 experiment (PPO-150 dataset).
+PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}'
+
+    # Jan 27 experiment (PPO-SAC-150 dataset).
+PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}' task.dataset_path=tmp_dataset/ppo_150_sac_150.zarr
+
