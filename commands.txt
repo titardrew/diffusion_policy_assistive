@@ -24,9 +24,9 @@ PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_pat
 
 # ---- TRAIN DIFFUSION ----
 
-    # Jan 26 experiment (PPO-150 dataset).
-PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}'
+    # Jan 26 experiment #1 (PPO-150 dataset).
+PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}' task.dataset_path=tmp_dataset/ppo_150.zarr
 
-    # Jan 27 experiment (PPO-SAC-150 dataset).
+    # Jan 27 experiment #2 (PPO-SAC-150 dataset).
 PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}' task.dataset_path=tmp_dataset/ppo_150_sac_150.zarr
 
