@@ -8,6 +8,8 @@ PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_pat
 
 
 # ---- GDRIVE ----
+    # We use GDrive to store data. See: https://github.com/glotlabs/gdrive/tree/main
+    # You'll have to create Google API Creds (OAuth). It's a bit tedious but fairly quick. See: https://github.com/glotlabs/gdrive/blob/main/docs/create_google_api_credentials.md
 
     # Import creds
 ./gdrive account import gdrive_export-titarenkoan_gmail_com.tar
