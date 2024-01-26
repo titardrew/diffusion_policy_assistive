@@ -83,7 +83,7 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
 def test():
     from pathlib import Path
     ROOT_DIR = Path(__file__).absolute().parent.parent.parent
-    zarr_path = ROOT_DIR / "tmp_dataset" / "ppo.zarr"
+    zarr_path = ROOT_DIR / "tmp_dataset" / "ppo_150_sac_150.zarr"
     dataset = AssistiveLowdimDataset(str(zarr_path), horizon=16)
     import ipdb
     ipdb.set_trace()

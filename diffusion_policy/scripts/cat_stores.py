@@ -17,6 +17,7 @@ def cat_zarr_stores(input_files: List[Path], output_file: Path):
     if output_file.exists():
         print(f"Removing existing {output_file}!")
         shutil.rmtree(str(output_file))
+        output_file.parent.mkdir(exist_ok=True, parents=True)
 
     for input_file in input_files:
         assert input_file.suffix == ".zarr"
@@ -41,13 +42,22 @@ def cat_zarr_stores(input_files: List[Path], output_file: Path):
             total_len = sum(shape[0] for shape in shapes[group][topic])
             dest[group][topic].resize(total_len, *shapes[group][topic][0][1:])
             head = 0
-            for i, store in enumerate(inputs):
-                store_len = shapes[group][topic][i][0]
-                dest[group][topic][head:head+store_len] = store[group][topic][:]
-                head += store_len
+            if topic == 'episode_ends':
+                shift = 0
+                for i, store in enumerate(inputs):
+                    store_len = shapes[group][topic][i][0]
+                    dest[group][topic][head:head+store_len] = store[group][topic][:] + shift
+                    head += store_len
+                    shift += store[group][topic][-1]
+            else:
+                for i, store in enumerate(inputs):
+                    store_len = shapes[group][topic][i][0]
+                    dest[group][topic][head:head+store_len] = store[group][topic][:]
+                    head += store_len
 
     print(f"Resulting {str(output_file)} storage spec:")
     print(dest.tree())
+    print(dest['meta']['episode_ends'][:])
 
      
 
