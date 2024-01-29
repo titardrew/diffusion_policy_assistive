@@ -95,6 +95,7 @@ def collect_with_policy(
         policy_path,
         n_episodes_render=0,
         n_episodes=100,
+        min_reward=-float("inf"),
         seed=0,
         verbose=False,
         extra_configs={}
@@ -169,7 +170,7 @@ def collect_with_policy(
                 writer.write(img[..., :3])
 
 
-        if task_success > 0.0:
+        if task_success > 0.0 and reward_total >= min_reward:
             n_collected_episodes += 1
             buffer.add_episode({
                 'state': np.array(state_history),
@@ -203,18 +204,13 @@ def collect_with_policy(
     buffer.save_to_path(output_path, chunk_length=-1)
 
     print('\n', '-'*50, '\n')
-    # print('Rewards:', rewards)
     print('Reward Mean:', np.mean(rewards))
     print('Reward Std:', np.std(rewards))
-
-    # print('Forces:', forces)
     print('Force Mean:', np.mean(forces))
     print('Force Std:', np.std(forces))
-
-    print('Task Failure Rate (%):', n_failures / (n_successes + n_failures) * 100)
-    # print('Task Successes:', task_successes)
     print('Task Success Mean:', np.mean(task_successes))
     print('Task Success Std:', np.std(task_successes))
+    print('Task Collection Rate (%):', n_successes / (n_successes + n_failures) * 100)
     sys.stdout.flush()
 
 
@@ -227,6 +223,8 @@ if __name__ == '__main__':
     parser.add_argument('--load-policy-path', default='./trained_models/',
                         help='Path name to saved policy checkpoint (NOTE: Use this to continue training an existing policy, or to evaluate a trained policy)')
 
+    parser.add_argument('--min-reward', type=float, default=-float("inf"),
+                        help='Minimum total reward to consider a trajectory successful.')
     parser.add_argument('--env', default='ScratchItchJaco-v1',
                         help='Environment to train on (default: ScratchItchJaco-v1)')
     parser.add_argument('--algo', default='ppo',
@@ -252,6 +250,7 @@ if __name__ == '__main__':
         policy_path=args.load_policy_path,
         n_episodes_render=args.render_episodes,
         n_episodes=args.episodes,
+        min_reward=args.min_reward,
         seed=args.seed,
         verbose=args.verbose,
     )

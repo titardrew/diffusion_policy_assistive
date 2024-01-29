@@ -57,8 +57,6 @@ def cat_zarr_stores(input_files: List[Path], output_file: Path):
 
     print(f"Resulting {str(output_file)} storage spec:")
     print(dest.tree())
-    print(dest['meta']['episode_ends'][:])
-
      
 
 if __name__ == "__main__":
