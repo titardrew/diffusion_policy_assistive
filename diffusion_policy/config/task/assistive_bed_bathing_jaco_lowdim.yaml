@@ -4,7 +4,7 @@ task_name: &task_name BedBathing
 robot_name: &robot_name Jaco
 dataset_path: &dataset_path ${task.dataset_path}
 
-obs_dim: 25 # for Jaco
+obs_dim: 24 # for Jaco
 action_dim: 7
 keypoint_dim: 0
 

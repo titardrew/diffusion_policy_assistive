@@ -8,6 +8,8 @@ def calc_dataset_stats(input_path: Path):
     store = zarr.open(str(input_path))
     epi_start = 0
     stats = defaultdict(list)
+    for k, v in store['data'].items():
+        print(k, v.shape)
     for epi_end in store['meta']['episode_ends']:
         episode_rewards = store['data']['reward'][epi_start: epi_end]
         stats['episode_total_reward'].append(np.sum(episode_rewards))
