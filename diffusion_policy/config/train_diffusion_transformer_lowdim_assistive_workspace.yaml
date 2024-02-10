@@ -20,6 +20,7 @@ pred_action_steps_only: False
 _1: ${eval:'print("n_obs_steps:", ${n_obs_steps})'}
 _2: ${eval:'print("horizon:", ${horizon})'}
 _3: ${eval:'print("n_action_steps:", ${n_action_steps})'}
+_4: ${eval:'print("task_name:", "${task_name}")'}
 
 policy:
   _target_: diffusion_policy.policy.diffusion_transformer_lowdim_policy.DiffusionTransformerLowdimPolicy
