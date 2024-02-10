@@ -102,3 +102,5 @@ HYDRA_FULL_ERROR=1 PYTHONPATH="." python train.py --config-dir=diffusion_policy/
     
     # experiment #8 (More data PPO underfitted).
 HYDRA_FULL_ERROR=1 PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_more_data_ppo_unerf_${name}_${task_name}' task.dataset_path=tmp_dataset/ppo_400k_1000.zarr
+
+    # Further are in the experiments doc.

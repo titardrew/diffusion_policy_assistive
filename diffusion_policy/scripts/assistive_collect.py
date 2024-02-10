@@ -113,7 +113,7 @@ def collect_with_policy(
         cam_h = 1080 // 4
         video_path = Path(output_path).parent / (Path(output_path).stem + "_rec.mp4")
         writer = cv2.VideoWriter(str(video_path), fourcc, fps, (cam_w, cam_h))
-        env.setup_camera(camera_eye=[0.5, -0.75, 1.5], camera_target=[-0.2, 0, 0.75], fov=60, camera_width=cam_w, camera_height=cam_h)
+        #env.setup_camera(camera_eye=[0.5, -0.75, 1.5], camera_target=[-0.2, 0, 0.75], fov=60, camera_width=cam_w, camera_height=cam_h)
 
     test_agent, _ = load_policy(env, algo, env_name, policy_path, coop, seed, extra_configs)
 
@@ -165,8 +165,8 @@ def collect_with_policy(
 
             if n_episodes_render > 0:
                 # Capture (render) an image from the camera
-                img, depth = env.get_camera_image_depth()
-                writer.write(img[..., :3])
+                rgb = env.render(mode="rgb_array")
+                writer.write(rgb)
 
 
         if task_success > 0.0 and reward_total >= min_reward:
