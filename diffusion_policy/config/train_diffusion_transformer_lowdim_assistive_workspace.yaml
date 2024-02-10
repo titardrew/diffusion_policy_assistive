@@ -17,7 +17,9 @@ n_latency_steps: 0
 past_action_visible: False
 obs_as_cond: True
 pred_action_steps_only: False
-_: ${eval:'print("n_obs_steps:", ${n_obs_steps})'}
+_1: ${eval:'print("n_obs_steps:", ${n_obs_steps})'}
+_2: ${eval:'print("horizon:", ${horizon})'}
+_3: ${eval:'print("n_action_steps:", ${n_action_steps})'}
 
 policy:
   _target_: diffusion_policy.policy.diffusion_transformer_lowdim_policy.DiffusionTransformerLowdimPolicy

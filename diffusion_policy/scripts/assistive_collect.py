@@ -128,8 +128,8 @@ def collect_with_policy(
     print(f"----------------------")
     while n_collected_episodes < n_episodes:
         n_tries += 1
-        if n_tries >= 50:
-            raise RuntimeError("Policy is garbage. 50 failures straight.")
+        if n_tries >= 200:
+            raise RuntimeError(f"Policy is garbage. {n_tries} failures straight.")
 
         obs = env.reset()
         done = False
@@ -166,7 +166,6 @@ def collect_with_policy(
             if n_episodes_render > 0:
                 # Capture (render) an image from the camera
                 img, depth = env.get_camera_image_depth()
-                print(img.shape)
                 writer.write(img[..., :3])
 
 
