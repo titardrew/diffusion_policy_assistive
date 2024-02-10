@@ -39,6 +39,8 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             past_action=False,
             tqdm_interval_sec=5.0,
             n_envs=None,
+            task_name: str = "Feeding",
+            robot_name: str = "Jaco",
             **kwargs,
         ):
         super().__init__(output_dir)
@@ -51,8 +53,6 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
         def env_fn():
             import assistive_gym
-            task_name = "Feeding"
-            robot_name = "Jaco"
             assert task_name in assistive_gym.tasks, assistive_gym.tasks
             assert robot_name in assistive_gym.robots, assistive_gym.robots
             env = gym.make(f"assistive_gym:{task_name}{robot_name}-v1")
