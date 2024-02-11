@@ -239,22 +239,15 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
         # log
         log_data = dict()
         prefix_total_reward_map = collections.defaultdict(list)
+        prefix_total_length_map = collections.defaultdict(list)
         prefix_success_map = collections.defaultdict(list)
-        #prefix_mean_forces_map = collections.defaultdict(list)
-        # results reported in the paper are generated using the commented out line below
-        # which will only report and average metrics from first n_envs initial condition and seeds
-        # fortunately this won't invalidate our conclusion since
-        # 1. This bug only affects the variance of metrics, not their mean
-        # 2. All baseline methods are evaluated using the same code
-        # to completely reproduce reported numbers, uncomment this line:
-        # for i in range(len(self.env_fns)):
-        # and comment out this line
         for i in range(n_inits):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
             this_rewards = all_rewards[i]
             total_reward = np.sum(this_rewards)
             prefix_total_reward_map[prefix].append(total_reward)
+            prefix_total_length_map[prefix].append(len(this_rewards))
 
             task_success = last_info[i]['task_success']
             prefix_success_map[prefix].append(task_success)
@@ -269,14 +262,20 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
         # log aggregate metrics
         for prefix, value in prefix_total_reward_map.items():
-            name = prefix + 'mean_score'
-            value = np.mean(value)
-            log_data[name] = value
+            value = np.std(value)
+            log_data[prefix + 'mean_score'] = np.mean(value)
+            log_data[prefix + 'std_score'] = np.std(value)
+
+        for prefix, value in prefix_total_length_map.items():
+            value = np.std(value)
+            log_data[prefix + 'mean_len'] = np.mean(value)
+            log_data[prefix + 'min_len'] = np.min(value)
+            log_data[prefix + 'max_len'] = np.max(value)
 
         for prefix, value in prefix_success_map.items():
             success = np.array(value)
-            name = prefix + f'success'
-            log_data[name] = np.mean(success)
+            log_data[prefix + 'success'] = np.mean(success)
+            log_data[prefix + 'success_std'] = np.std(success)
 
         """
         for prefix, value in prefix_mean_forces_map.items():
