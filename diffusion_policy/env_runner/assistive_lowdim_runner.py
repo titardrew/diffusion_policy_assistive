@@ -262,12 +262,12 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
         # log aggregate metrics
         for prefix, value in prefix_total_reward_map.items():
-            value = np.std(value)
+            value = np.array(value)
             log_data[prefix + 'mean_score'] = np.mean(value)
             log_data[prefix + 'std_score'] = np.std(value)
 
         for prefix, value in prefix_total_length_map.items():
-            value = np.std(value)
+            value = np.array(value)
             log_data[prefix + 'mean_len'] = np.mean(value)
             log_data[prefix + 'min_len'] = np.min(value)
             log_data[prefix + 'max_len'] = np.max(value)

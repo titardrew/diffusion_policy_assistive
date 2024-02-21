@@ -56,6 +56,9 @@ PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_pat
     # collect a BedBathing_ppo (#17) dataset
 PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/BedBathing_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_strip/ppo/BedBathingJaco-v1/checkpoint_000131/ --algo ppo --env BedBathing-v1 --episodes 1000
 
+    # collect a Drinking_1000k_ppo (#15) dataset
+PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/Drinking_1000k_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_1000k/ppo/DrinkingJaco-v1/checkpoint_000053/ --algo ppo --env DrinkingJaco-v1 --episodes 1000 --render-episodes 5
+
 
 # ---- GDRIVE ----
     # We use GDrive to store data. See: https://github.com/glotlabs/gdrive/tree/main

@@ -230,7 +230,7 @@ class ConditionalUnet1D(nn.Module):
             # if idx == (len(self.up_modules)-1) and len(h_local) > 0:
             # However this change will break compatibility with published checkpoints.
             # Therefore it is left as a comment.
-            if idx == len(self.up_modules) and len(h_local) > 0:
+            if idx == (len(self.up_modules)-1) and len(h_local) > 0:
                 x = x + h_local[1]
             x = resnet2(x, global_feature)
             x = upsample(x)
