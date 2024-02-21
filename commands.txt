@@ -54,9 +54,12 @@ PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_pat
 PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/ArmManipulation_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_strip/ppo/ArmManipulationJaco-v1/checkpoint_000131/ --algo ppo --env ArmManipulationJaco-v1 --episodes 1000
     
     # collect a BedBathing_ppo (#17) dataset
-PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/BedBathing_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_strip/ppo/BedBathingJaco-v1/checkpoint_000131/ --algo ppo --env BedBathing-v1 --episodes 1000
+PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/BedBathing_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_strip/ppo/BedBathingJaco-v1/checkpoint_000131/ --algo ppo --env BedBathingJaco-v1 --episodes 1000
+    
+    # collect a Drinking_ppo (#18) dataset
+PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/Drinking_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_strip/ppo/DrinkingJaco-v1/checkpoint_000131/ --algo ppo --env DrinkingJaco-v1 --episodes 1000 --render-episodes 5
 
-    # collect a Drinking_1000k_ppo (#15) dataset
+    # collect a Drinking_1000k_ppo (#19) dataset
 PYTHONPATH="." python diffusion_policy/scripts/assistive_collect.py --output_path tmp_dataset/Drinking_1000k_ppo.zarr --load-policy-path ./submodules/assistive-gym/trained_models_1000k/ppo/DrinkingJaco-v1/checkpoint_000053/ --algo ppo --env DrinkingJaco-v1 --episodes 1000 --render-episodes 5
 
 

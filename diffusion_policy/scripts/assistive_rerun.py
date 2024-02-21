@@ -15,7 +15,7 @@ from ray.tune.logger import pretty_print
 from numpngw import write_apng
 import assistive_gym
 
-from diffusion_policy.common.replay_buffer import ReplayBuffer
+import rerun as rr
 
 
 def load_policy(env, algo, env_name, policy_path=None, coop=False, seed=0, extra_configs={}):
@@ -40,6 +40,22 @@ def load_policy(env, algo, env_name, policy_path=None, coop=False, seed=0, extra
             return agent, None
     return agent, None
 
+def draw_state(env_name, obs, info, reward, done):
+    if "FeedingJaco" in env_name:
+        success_percent = info['task_success_percent']
+        rr.log('info/success_percent', rr.TimeSeriesScalar(scalar=success_percent))
+        verbose_obs = info['verbose_obs']
+        robot_links = info['robot_links']
+        link_strip = []
+        for link_pos, link_orient in robot_links:
+            link_strip.append(list(link_pos))
+
+        rr.log('world/robot', rr.LineStrips3D(
+            strips=[link_strip]
+        ))
+    else:
+        raise NotImplementedError()
+
 
 def make_env(env_name, coop=False, seed=1001):
     if not coop:
@@ -58,7 +74,6 @@ def collect_with_policy(
         env_name,
         algo,
         policy_path,
-        n_episodes_render=0,
         n_episodes=100,
         min_reward=-float("inf"),
         seed=0,
@@ -70,18 +85,12 @@ def collect_with_policy(
     ray.init(num_cpus=multiprocessing.cpu_count(), ignore_reinit_error=True, log_to_driver=False)
     env = make_env(env_name, coop, seed=seed)
 
-    if n_episodes_render > 0:
-        import cv2
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        fps = 10
-        cam_w = 1920 // 4
-        cam_h = 1080 // 4
-        video_path = Path(output_path).parent / (Path(output_path).stem + "_rec.mp4")
-        writer = cv2.VideoWriter(str(video_path), fourcc, fps, (cam_w, cam_h))
-
     test_agent, _ = load_policy(env, algo, env_name, policy_path, coop, seed, extra_configs)
 
-    buffer = ReplayBuffer.create_empty_numpy()
+    Path(output_path).mkdir(exist_ok=True, parents=True)
+
+    rr.init("assistive_rerun")
+
     rewards = []
     forces = []
     task_successes = []
@@ -90,10 +99,14 @@ def collect_with_policy(
     n_failures = 0
     n_successes = 0
     print(f"----------------------")
+    n_episodes_total = 0
     while n_collected_episodes < n_episodes:
+        n_episodes_total += 1
         n_tries += 1
         if n_tries >= 1000:
             raise RuntimeError(f"Policy is garbage. {n_tries} failures straight.")
+
+        rr.save(str(Path(output_path) / f"episode_{n_episodes_total}.rrd"))
 
         obs = env.reset()
         done = False
@@ -127,19 +140,13 @@ def collect_with_policy(
             force_list.append(info['total_force_on_human'])
             task_success = info['task_success']
 
-            if n_episodes_render > 0:
-                # Capture (render) an image from the camera
-                rgb = env.render(mode="rgb_array")
-                writer.write(rgb)
+            # Capture (render) an image from the camera
+            rgb = env.render(mode="rgb_array")
+            rr.log("camera/rgb", rr.Image(rgb).compress())
 
 
         if task_success > 0.0 and reward_total >= min_reward:
             n_collected_episodes += 1
-            buffer.add_episode({
-                'state': np.array(state_history),
-                'action': np.array(action_history),
-                'reward': np.array(reward_history),
-            })
             print(f"Collected: {n_collected_episodes}/{n_episodes}")
             print(f"Episode len: {len(state_history)}")
             print(f"Tries: {n_tries}")
@@ -147,14 +154,6 @@ def collect_with_policy(
             n_failures += n_tries - 1
             n_successes += 1
             n_tries = 0
-        if n_episodes_render > 0:
-            n_episodes_render -= 1
-            if n_episodes_render == 0:
-                writer.release()
-                mb = (video_path.stat().st_size / 10**6)
-                print(f"[Viz] Rendered all. Filesize: {mb} Mb.")
-                print(f"----------------------")
-        #print(reward_total)
         rewards.append(reward_total)
         forces.append(np.mean(force_list))
         task_successes.append(task_success)
@@ -163,8 +162,6 @@ def collect_with_policy(
         sys.stdout.flush()
     env.disconnect()
 
-
-    buffer.save_to_path(output_path, chunk_length=-1)
 
     print('\n', '-'*50, '\n')
     print('Reward Mean:', np.mean(rewards))
@@ -181,21 +178,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RL for Assistive Gym')
     parser.add_argument('--episodes', type=int, default=100,
                         help='Number of collected episodes (default: 100)')
-    parser.add_argument('--output_path', default='./ppo.zarr',
-                        help='Directory to save trained policy in (default ./ppo.zarr)')
+    parser.add_argument('--output_path', default='./assisitve_reruns/',
+                        help='Directory to save rerun file')
     parser.add_argument('--load-policy-path', default='./trained_models/',
                         help='Path name to saved policy checkpoint (NOTE: Use this to continue training an existing policy, or to evaluate a trained policy)')
 
-    parser.add_argument('--min-reward', type=float, default=-float("inf"),
-                        help='Minimum total reward to consider a trajectory successful.')
     parser.add_argument('--env', default='ScratchItchJaco-v1',
                         help='Environment to train on (default: ScratchItchJaco-v1)')
     parser.add_argument('--algo', default='ppo',
                         help='Reinforcement learning algorithm')
     parser.add_argument('--seed', type=int, default=1,
                         help='Random seed (default: 1)')
-    parser.add_argument('--render-episodes', type=int, default=0,
-                        help='How many episodes to render')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Whether to output more verbose prints')
     args = parser.parse_args()
@@ -211,9 +204,7 @@ if __name__ == '__main__':
         env_name=args.env,
         algo=args.algo,
         policy_path=args.load_policy_path,
-        n_episodes_render=args.render_episodes,
         n_episodes=args.episodes,
-        min_reward=args.min_reward,
         seed=args.seed,
         verbose=args.verbose,
     )
