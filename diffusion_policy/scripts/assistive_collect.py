@@ -178,7 +178,7 @@ def collect_with_policy(
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='RL for Assistive Gym')
+    parser = argparse.ArgumentParser(description='Use pretrained RL algorithm to collect trajectories on Assistive Gym.')
     parser.add_argument('--episodes', type=int, default=100,
                         help='Number of collected episodes (default: 100)')
     parser.add_argument('--output_path', default='./ppo.zarr',
