@@ -19,6 +19,7 @@ from diffusion_policy.gym_util.video_recording_wrapper import VideoRecordingWrap
 from diffusion_policy.policy.base_lowdim_policy import BaseLowdimPolicy
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.env_runner.base_lowdim_runner import BaseLowdimRunner
+from diffusion_policy.scripts.assistive_train_safety_model import *
 
 module_logger = logging.getLogger(__name__)
 
@@ -41,9 +42,16 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             n_envs=None,
             task_name: str = "Feeding",
             robot_name: str = "Jaco",
+            safety_model_path: str = None,
+            safety_model_kwargs: dict = None,
             **kwargs,
         ):
         super().__init__(output_dir)
+
+        self.safety_model = None
+        if safety_model_path is not None:
+            self.safety_model = torch.load(safety_model_path)
+            self.safety_model.override_params(safety_model_kwargs)
 
         if n_envs is None:
             n_envs = n_train + n_test
@@ -191,6 +199,12 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             past_action = None
             policy.reset()
 
+            if self.safety_model:
+                self.safety_model.reset()
+
+            assert obs.shape[0] == this_n_active_envs
+            safe_mask = np.ones((this_n_active_envs,), dtype=np.bool_)
+
             pbar = tqdm.tqdm(total=self.max_steps, desc=f"Eval AssistiveLowdimRunner {chunk_idx+1}/{n_chunks}", 
                 leave=False, mininterval=self.tqdm_interval_sec)
             done = False
@@ -218,9 +232,26 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
                 action = np_action_dict['action']
 
+                if self.safety_model:
+                    try:
+                        device = self.safety_model.device
+                    except:
+                        device = "cpu"
+                    is_safe = self.safety_model.check_safety_runner({
+                        'obs': obs_dict['obs'].to(device),
+                        'action': action_dict['action_pred'].to(device),
+                    })
+                    safe_mask &= is_safe
+
+                # Apply safety mask
+                action[~safe_mask] = 0.0
+
                 # step env
                 obs, reward, done, info = env.step(action)
-                done = np.all(done)
+
+                # NOTE(aty): Unsafe envs are automatically done (aka halted)
+                done = np.all(done | ~safe_mask)
+
                 past_action = action
 
                 # update pbar
@@ -232,15 +263,21 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
             last_info[this_global_slice] = [dict((k,v[-1]) for k, v in x.items()) for x in info][this_local_slice]
 
-        # reward is number of tasks completed, max 7
-        # use info to record the order of task completion?
-        # also report the probably to completing n tasks (different aggregation of reward).
+            def to_range(s: slice):
+                return range(s.start, s.stop)
+
+            # add "task_halted" to info
+            for i_info, i_env in zip(to_range(this_global_slice), to_range(this_local_slice)):
+                last_info[i_info]['task_halted'] = not safe_mask[i_env]
 
         # log
         log_data = dict()
         prefix_total_reward_map = collections.defaultdict(list)
         prefix_total_length_map = collections.defaultdict(list)
+        prefix_timeout_map = collections.defaultdict(list)
+        prefix_halted_map = collections.defaultdict(list)
         prefix_success_map = collections.defaultdict(list)
+        prefix_failure_map = collections.defaultdict(list)
         for i in range(n_inits):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
@@ -251,6 +288,12 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
             task_success = last_info[i]['task_success']
             prefix_success_map[prefix].append(task_success)
+            task_halted = last_info[i]['task_halted']
+            prefix_halted_map[prefix].append(task_halted)
+            task_timeout = (len(this_rewards) == 200) and not task_halted
+            prefix_timeout_map[prefix].append(task_timeout)
+            task_failed = not (task_success or task_halted or task_timeout)
+            prefix_failure_map[prefix].append(task_failed)
             #mean_force_on_human = last_info[i]['total_force_on_human_sum'] / len(this_rewards)
             #prefix_mean_forces_map[prefix].append(mean_force_on_human)
 
@@ -272,10 +315,33 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             log_data[prefix + 'min_len'] = np.min(value)
             log_data[prefix + 'max_len'] = np.max(value)
 
+        #
+        #   SUCCESS - task completed successfully.
+        #   HALTED  - task failed but the failure is detected and handled correctly.
+        #   TIMEOUT - task failed due to the timeout. Policy just got lost. Bad, but not the worst.
+        #   FAILURE - task failed. Worst case.
+        #
+        #   SUCCESS + TIMEOUT + HALTED + FAILURE = 100%
+        #
         for prefix, value in prefix_success_map.items():
             success = np.array(value)
             log_data[prefix + 'success'] = np.mean(success)
             log_data[prefix + 'success_std'] = np.std(success)
+
+        for prefix, value in prefix_halted_map.items():
+            halted = np.array(value)
+            log_data[prefix + 'halted'] = np.mean(halted)
+            log_data[prefix + 'halted_std'] = np.std(halted)
+
+        for prefix, value in prefix_timeout_map.items():
+            timeout = np.array(value)
+            log_data[prefix + 'timeout'] = np.mean(timeout)
+            log_data[prefix + 'timeout_std'] = np.std(timeout)
+
+        for prefix, value in prefix_failure_map.items():
+            failure = np.array(value)
+            log_data[prefix + 'failure'] = np.mean(failure)
+            log_data[prefix + 'failure_std'] = np.std(failure)
 
         """
         for prefix, value in prefix_mean_forces_map.items():

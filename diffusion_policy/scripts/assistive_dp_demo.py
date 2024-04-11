@@ -8,6 +8,8 @@ import sys
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
+from typing import Optional
+
 import argparse
 import os
 import pathlib
@@ -28,6 +30,7 @@ import numpy as np
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.gym_util.multistep_wrapper import MultiStepWrapper
 from diffusion_policy.common.pytorch_util import dict_apply
+from diffusion_policy.scripts.assistive_train_safety_model import *
 
 import assistive_gym
 
@@ -47,8 +50,14 @@ def make_env(env_name, seed, n_obs_steps, n_action_steps, max_steps):
     )
 
 
-def demo_checkpoint(checkpoint, output_dir, device, seed):
 
+def demo_checkpoint(
+        checkpoint: str,
+        output_dir: str,
+        device: str,
+        seed: int,
+        safety_model: Optional[SafetyModel] = None,
+):
     #if os.path.exists(output_dir):
     #    click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -91,6 +100,9 @@ def demo_checkpoint(checkpoint, output_dir, device, seed):
         max_steps=200,
     )
 
+    safety_model.to(device)
+
+    policy.n_action_steps = 8
     rr.init("Assistive twin", spawn=True)
 
     total_reward = 0
@@ -101,7 +113,6 @@ def demo_checkpoint(checkpoint, output_dir, device, seed):
     obs = env.reset()
 
     while not done:
-        rr.log("random_scalar", rr.Scalar(np.random.randn()))
         np_obs_dict = {
             'obs': obs.astype(np.float32)[None, ...],
         }
@@ -120,7 +131,19 @@ def demo_checkpoint(checkpoint, output_dir, device, seed):
 
         action = np_action_dict['action'][0]
         action_pred = np_action_dict['action_pred'][0]
-        breakpoint()
+
+        # print(f"T_o: {policy.n_obs_steps}")
+        # print(f"T_a: {policy.n_action_steps}")
+        # print(f"H: {policy.horizon}")
+        # print(f"obs: {obs_dict['obs'].shape}")
+        # print(f"action: {action_dict['action_pred'].shape}")
+
+        batch = {
+            'obs': obs_dict['obs'],
+            'action': action_dict['action_pred'],
+        }
+        safety_model.override_params({'std_threshold': 0.1})
+        is_safe = safety_model.check_safety_runner(batch, rr_log=True)
 
         # step env
         obs, reward, done, info = env.step(action)
@@ -148,12 +171,15 @@ if __name__ == '__main__':
         default=DEFAULT_CHECKPOINT)
     parser.add_argument('--seed', type=int, help='Random env seed.')
     parser.add_argument('--device', default="cuda:0")
+    parser.add_argument('--safety_model', default="ensemble_state_prediction_sm3.pth")
     parser.add_argument('-o', '--output_dir', default="/tmp/output_dir_for_diffusion_policy/")
     args = parser.parse_args()
 
+    safety_model = torch.load(args.safety_model)
     demo_checkpoint(
         checkpoint=args.checkpoint,
         output_dir=args.output_dir,
         device=args.device,
         seed=args.seed,
+        safety_model=safety_model,
     )

@@ -17,6 +17,9 @@ import dill
 import wandb
 import json
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
+from diffusion_policy.scripts.assistive_train_safety_model import *
+
+from omegaconf import open_dict
 
 @click.command()
 @click.option('-c', '--checkpoint', required=True)
@@ -30,6 +33,13 @@ def main(checkpoint, output_dir, device):
     # load checkpoint
     payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
+
+    with open_dict(cfg):
+        cfg.task.env_runner.safety_model_path = "ensemble_state_prediction_sm3.pth"
+        cfg.task.env_runner.safety_model_kwargs = {
+            "std_threshold": 0.10,
+        }
+
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, output_dir=output_dir)
     workspace: BaseWorkspace
@@ -45,16 +55,24 @@ def main(checkpoint, output_dir, device):
     policy.eval()
     
     # run eval
+
     env_runner = hydra.utils.instantiate(
         cfg.task.env_runner,
         output_dir=output_dir)
     runner_log = env_runner.run(policy)
     
     # dump log to json
+    import numpy as np
     json_log = dict()
     for key, value in runner_log.items():
         if isinstance(value, wandb.sdk.data_types.video.Video):
             json_log[key] = value._path
+        elif isinstance(value, np.integer):
+            json_log[key] = int(value)
+        elif isinstance(value, np.bool_):
+            json_log[key] = bool(value)
+        elif isinstance(value, np.floating):
+            json_log[key] = float(value)
         else:
             json_log[key] = value
     out_path = os.path.join(output_dir, 'eval_log.json')
