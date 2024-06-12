@@ -1,3 +1,4 @@
+import enum
 from typing import Optional
 import numpy as np
 import numba
@@ -42,7 +43,7 @@ def create_indices(
                 assert (sample_end_idx - sample_start_idx) == (buffer_end_idx - buffer_start_idx)
             indices.append([
                 buffer_start_idx, buffer_end_idx, 
-                sample_start_idx, sample_end_idx])
+                sample_start_idx, sample_end_idx, max(idx + sequence_length, episode_length)])
     indices = np.array(indices)
     return indices
 
@@ -74,6 +75,13 @@ def downsample_mask(mask, max_n, seed=0):
         assert np.sum(train_mask) == n_train
     return train_mask
 
+
+class PaddingType(enum.Enum):
+    REPLICATE = "mirror",
+    ZEROS = "zeros",
+    ZERO_ACT_REPLICATE_STATE = "zeros",
+
+
 class SequenceSampler:
     def __init__(self, 
         replay_buffer: ReplayBuffer, 
@@ -83,6 +91,8 @@ class SequenceSampler:
         keys=None,
         key_first_k=dict(),
         episode_mask: Optional[np.ndarray]=None,
+        create_indices_fn = create_indices,
+        padding: PaddingType = PaddingType.REPLICATE,
         ):
         """
         key_first_k: dict str: int
@@ -99,12 +109,12 @@ class SequenceSampler:
             episode_mask = np.ones(episode_ends.shape, dtype=bool)
 
         if np.any(episode_mask):
-            indices = create_indices(episode_ends, 
+            indices = create_indices_fn(episode_ends, 
                 sequence_length=sequence_length, 
-                pad_before=pad_before, 
+                episode_mask=episode_mask,
+                pad_before=pad_before,
                 pad_after=pad_after,
-                episode_mask=episode_mask
-                )
+            )
         else:
             indices = np.zeros((0,4), dtype=np.int64)
 
@@ -114,12 +124,13 @@ class SequenceSampler:
         self.sequence_length = sequence_length
         self.replay_buffer = replay_buffer
         self.key_first_k = key_first_k
+        self.padding = padding
     
     def __len__(self):
         return len(self.indices)
         
     def sample_sequence(self, idx):
-        buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx \
+        buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx, length \
             = self.indices[idx]
         result = dict()
         for key in self.keys:
@@ -144,10 +155,93 @@ class SequenceSampler:
                 data = np.zeros(
                     shape=(self.sequence_length,) + input_arr.shape[1:],
                     dtype=input_arr.dtype)
-                if sample_start_idx > 0:
-                    data[:sample_start_idx] = sample[0]
-                if sample_end_idx < self.sequence_length:
-                    data[sample_end_idx:] = sample[-1]
-                data[sample_start_idx:sample_end_idx] = sample
+
+                if self.padding == PaddingType.REPLICATE:
+                    if sample_start_idx > 0:
+                        data[:sample_start_idx] = sample[0]
+                    if sample_end_idx < self.sequence_length:
+                        data[sample_end_idx:] = sample[-1]
+                elif self.padding == PaddingType.ZERO_ACT_REPLICATE_STATE:
+                    if ("obs" in key) or ("state" in key):
+                        if sample_end_idx < self.sequence_length:
+                            data[sample_end_idx:] = sample[-1]
+                else:
+                    assert self.padding == PaddingType.ZEROS, self.padding
+                    assert self.sequence_length >= sample_end_idx - sample_start_idx
+
+                data[sample_start_idx: sample_end_idx] = sample
             result[key] = data
+        result["length"] = np.array([length])
         return result
+
+
+def get_create_indices_fn_whole_sequence(
+    gap_horizon_, out_obs_horizon_,
+):
+    @numba.jit(nopython=True)
+    def create_indices_whole_sequence(
+        episode_ends: np.ndarray,
+        sequence_length: int, 
+        episode_mask: np.ndarray,
+        pad_before: int=0, pad_after: int=0, debug : bool=True,
+        gap_horizon=0, out_obs_horizon=0,
+    ) -> np.ndarray:
+
+        assert episode_mask.shape == episode_ends.shape        
+
+
+        indices = list()
+        for i in range(len(episode_ends)):
+            if not episode_mask[i]:
+                # skip episode
+                continue
+            start_idx = 0
+            if i > 0:
+                start_idx = episode_ends[i-1]
+            end_idx = episode_ends[i]
+            episode_length = end_idx - start_idx
+            
+            min_sequence_length = gap_horizon + out_obs_horizon
+            max_sequence_length = min(sequence_length, episode_length
+                                     # + gap_horizon + out_obs_horizon
+                                      )
+            #assert min_sequence_length < episode_length, (min_sequence_length, episode_length)
+            #  full sequence:
+            #  s0 s1 s2 s3 s4
+            #  gap_horizon = 1, out_obs_horizon = 2
+            #  sampled sequences ([] is supposed to be input and {} - output):
+            #  |-----------episode-----------|---padding----|
+            #  [ s0 ] s1 { s2   s3 }
+            #  [ s0   s1 ] s2 { s3   s4 }
+            #  [ s0   s1   s2 ] s3 { s4   s5 }
+            #  [ s0   s1   s2   s3 ] s4 { s5   s5 }
+            #  [ s0   s1   s2   s3   s4 ] s5 { s5   s5 }
+            #  [ s0   s1   s2   s3   s4   s5 ] s5 { s5   s5 }
+            # 
+            #  Thus, max_sequence len must include full episode as input, a gap and outputs
+            #  Note, padding goes s5, s5, s5 - this is "replicate"-mode padding
+
+            for sample_len in range(min_sequence_length + 1, max_sequence_length + 1):
+
+                length = sample_len
+                if sample_len > episode_length:
+                    sample_len = episode_length
+
+                sample_start_idx = 0
+                sample_end_idx = sample_len
+                buffer_start_idx = start_idx
+                buffer_end_idx = start_idx + sample_len
+                indices.append([
+                    buffer_start_idx, buffer_end_idx, 
+                    sample_start_idx, sample_end_idx, length])
+        indices = np.array(indices)
+        return indices
+
+    def fn(
+        episode_ends: np.ndarray,
+        sequence_length: int, 
+        episode_mask: np.ndarray,
+        pad_before: int=0, pad_after: int=0, debug : bool=True,
+    ):
+        return create_indices_whole_sequence(episode_ends, sequence_length, episode_mask, pad_before, pad_after, debug, gap_horizon_, out_obs_horizon_)
+    return fn

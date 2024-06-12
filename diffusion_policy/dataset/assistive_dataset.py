@@ -5,10 +5,9 @@ import copy
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.sampler import (
-    SequenceSampler, get_val_mask, downsample_mask)
+    SequenceSampler, get_val_mask, downsample_mask, create_indices, get_create_indices_fn_whole_sequence, PaddingType)
 from diffusion_policy.model.common.normalizer import LinearNormalizer
 from diffusion_policy.dataset.base_dataset import BaseLowdimDataset
-from diffusion_policy.common.normalize_util import get_image_range_normalizer
 
 class AssistiveLowdimDataset(BaseLowdimDataset):
     def __init__(self,
@@ -18,8 +17,16 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
             pad_after=0,
             seed=42,
             val_ratio=0.0,
-            max_train_episodes=None
-            ):
+            max_train_episodes=None,
+            whole_sequence_sampling: bool = False,
+            gap_horizon: int = None,
+            out_obs_horizon: int = None
+    ):
+        """
+        whole_sequence_sampling - flag.
+            If on, full episodes embedded into the horizon-sized buffer of zeros will be sampled.
+            If off, classical chunk sampling.
+        """
         
         super().__init__()
         self.replay_buffer = ReplayBuffer.copy_from_path(
@@ -33,13 +40,23 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
             mask=train_mask, 
             max_n=max_train_episodes, 
             seed=seed)
+        
+        if whole_sequence_sampling:
+            self.create_indices_fn = get_create_indices_fn_whole_sequence(gap_horizon, out_obs_horizon)
+            self.padding = PaddingType.ZERO_ACT_REPLICATE_STATE
+        else:
+            self.create_indices_fn = create_indices
+            self.padding = PaddingType.REPLICATE
 
         self.sampler = SequenceSampler(
             replay_buffer=self.replay_buffer, 
             sequence_length=horizon,
             pad_before=pad_before, 
             pad_after=pad_after,
-            episode_mask=train_mask)
+            episode_mask=train_mask,
+            create_indices_fn=self.create_indices_fn,
+            padding=self.padding,
+        )
         self.train_mask = train_mask
         self.horizon = horizon
         self.pad_before = pad_before
@@ -52,13 +69,15 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
             sequence_length=self.horizon,
             pad_before=self.pad_before, 
             pad_after=self.pad_after,
-            episode_mask=~self.train_mask
-            )
+            episode_mask=~self.train_mask,
+            create_indices_fn=self.create_indices_fn,
+            padding=self.padding,
+        )
         val_set.train_mask = ~self.train_mask
         return val_set
 
     def get_normalizer(self, mode='limits', **kwargs):
-        data = self._sample_to_data(self.replay_buffer)
+        data = self._sample_to_data(self.replay_buffer, no_len=True)
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
         return normalizer
@@ -66,11 +85,13 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
     def __len__(self) -> int:
         return len(self.sampler)
 
-    def _sample_to_data(self, sample):
+    def _sample_to_data(self, sample, no_len=False):
         data = {
             'obs': sample['state'].astype(np.float32), # T, S
             'action': sample['action'].astype(np.float32) # T, A
         }
+        if not no_len:
+            data.update({"length": sample["length"].astype(np.int_)})
         return data
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
@@ -83,8 +104,10 @@ class AssistiveLowdimDataset(BaseLowdimDataset):
 def test():
     from pathlib import Path
     ROOT_DIR = Path(__file__).absolute().parent.parent.parent
-    zarr_path = ROOT_DIR / "tmp_dataset" / "ppo_150_sac_150.zarr"
-    dataset = AssistiveLowdimDataset(str(zarr_path), horizon=16)
+    zarr_path = ROOT_DIR / "teleop_datasets" / "FeedingJaco-v1.zarr"
+    dataset = AssistiveLowdimDataset(str(zarr_path), horizon=50)
+    dataset_full = AssistiveLowdimDataset(str(zarr_path), horizon=200, whole_sequence_sampling=True)
+    print(dataset_full[0]["length"])
     import ipdb
     ipdb.set_trace()
 

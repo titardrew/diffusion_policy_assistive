@@ -15,11 +15,12 @@ from diffusion_policy.gym_util.async_vector_env import AsyncVectorEnv
 from diffusion_policy.gym_util.sync_vector_env import SyncVectorEnv
 from diffusion_policy.gym_util.multistep_wrapper import MultiStepWrapper
 from diffusion_policy.gym_util.video_recording_wrapper import VideoRecordingWrapper, VideoRecorder
+from diffusion_policy.gym_util.zarr_recording_wrapper import ZarrRecordingWrapper
 
 from diffusion_policy.policy.base_lowdim_policy import BaseLowdimPolicy
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.env_runner.base_lowdim_runner import BaseLowdimRunner
-from diffusion_policy.scripts.assistive_train_safety_model import *
+from safety_model.train import *
 
 module_logger = logging.getLogger(__name__)
 
@@ -44,10 +45,10 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             robot_name: str = "Jaco",
             safety_model_path: str = None,
             safety_model_kwargs: dict = None,
+            record_zarr: bool = False,
             **kwargs,
         ):
         super().__init__(output_dir)
-
         self.safety_model = None
         if safety_model_path is not None:
             self.safety_model = torch.load(safety_model_path)
@@ -56,6 +57,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
         if n_envs is None:
             n_envs = n_train + n_test
 
+        self.record_zarr = record_zarr
         task_fps = 12.5
         steps_per_render = int(max(task_fps // fps, 1))
 
@@ -67,7 +69,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
 
             return MultiStepWrapper(
                 VideoRecordingWrapper(
-                    env,
+                    ZarrRecordingWrapper(env, file_path=None),
                     video_recoder=VideoRecorder.create_h264(
                         fps=fps,
                         codec='h264',
@@ -81,7 +83,8 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                 ),
                 n_obs_steps=n_obs_steps,
                 n_action_steps=n_action_steps,
-                max_episode_steps=max_steps
+                max_episode_steps=max_steps,
+                horizon=self.safety_model.horizon if self.safety_model else None,
             )
 
         env_fns = [env_fn] * n_envs
@@ -101,7 +104,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                 env.env.file_path = None
                 if enable_render:
                     filename = pathlib.Path(output_dir).joinpath(
-                        'media', wv.util.generate_id() + ".mp4")
+                        'media', f"train_episode_{i}.mp4")
                     filename.parent.mkdir(parents=False, exist_ok=True)
                     filename = str(filename)
                     env.env.file_path = filename
@@ -119,7 +122,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             seed = test_start_seed + i
             enable_render = i < n_test_vis
 
-            def init_fn(env, seed=seed, enable_render=enable_render):
+            def init_fn(env, seed=seed, enable_render=enable_render, record_zarr=record_zarr):
                 # setup rendering
                 # video_wrapper
                 assert isinstance(env.env, VideoRecordingWrapper), env.env
@@ -127,10 +130,18 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                 env.env.file_path = None
                 if enable_render:
                     filename = pathlib.Path(output_dir).joinpath(
-                        'media', wv.util.generate_id() + ".mp4")
+                        'media', f"test_episode_{i}.mp4")
                     filename.parent.mkdir(parents=False, exist_ok=True)
                     filename = str(filename)
                     env.env.file_path = filename
+
+                if record_zarr:
+                    assert isinstance(env.env.env, ZarrRecordingWrapper), env.env.env
+                    filename = pathlib.Path(output_dir).joinpath(
+                        'zarr_recording', f"test_episode_{i}.zarr")
+                    filename.parent.mkdir(parents=False, exist_ok=True)
+                    filename = str(filename)
+                    env.env.env.file_path = filename
 
                 #TODO(aty): it's actually <TimeLimit<FeedingJacoEnv<FeedingJaco-v1>>>, check that instead!
                 #from assistive_gym.envs.env import AssistiveEnv
@@ -202,8 +213,9 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             if self.safety_model:
                 self.safety_model.reset()
 
-            assert obs.shape[0] == this_n_active_envs
-            safe_mask = np.ones((this_n_active_envs,), dtype=np.bool_)
+            assert obs.shape[0] == n_envs, (n_envs, obs.shape, this_global_slice)
+            safe_mask = np.ones((n_envs,), dtype=np.bool_)
+            max_uncertainty_scores = np.ones((n_envs,), dtype=np.float64) * (-np.inf)
 
             pbar = tqdm.tqdm(total=self.max_steps, desc=f"Eval AssistiveLowdimRunner {chunk_idx+1}/{n_chunks}", 
                 leave=False, mininterval=self.tqdm_interval_sec)
@@ -237,10 +249,42 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
                         device = self.safety_model.device
                     except:
                         device = "cpu"
-                    is_safe = self.safety_model.check_safety_runner({
-                        'obs': obs_dict['obs'].to(device),
-                        'action': action_dict['action_pred'].to(device),
-                    })
+
+                    obs_list = env.call('get_attr', 'cached_obs')
+                    act_list = env.call('get_attr', 'cached_actions')
+                    from gym.vector.utils.numpy_utils import concatenate, create_empty_array
+                    obs = concatenate(obs_list, None, env.single_observation_space).astype(np.float32)
+                    act = concatenate(act_list, None, env.single_action_space).astype(np.float32)
+                    if isinstance(self.safety_model, EnsembleStatePredictionSM):
+                        is_safe, stats = self.safety_model.check_safety_runner({
+                            'obs': torch.from_numpy(obs).to(device),
+                            'action': action_dict['action_pred'].to(device),
+                        }, return_stats=True)
+                        max_uncertainty_scores = np.maximum(list(stats.values())[0], max_uncertainty_scores)
+                    elif isinstance(self.safety_model, VariationalAutoEncoderSM):
+
+                        if self.safety_model.in_act_horizon > self.safety_model.in_obs_horizon:
+                            n_obs_steps = self.n_obs_steps
+                            n_action_steps = self.n_action_steps
+                            #assert action_dict['action_pred'].shape[1] == horizon
+                            #breakpoint()
+                            action_vec = torch.cat([torch.from_numpy(act).to(device), action_dict['action_pred'][:, n_obs_steps:].to(device)], dim=1)
+                        else:
+                            action_vec = torch.from_numpy(act).to(device)
+                        batch = {
+                            'obs': torch.from_numpy(obs).to(device),
+                            'action': action_vec,
+                        }
+                        is_safe, stats = self.safety_model.check_safety_runner(batch, return_stats=True)
+                        #    {
+                        #    'obs': torch.from_numpy(obs).to(device),
+                        #    'action': torch.from_numpy(act).to(device),
+                        #}, return_stats=True)
+                        max_uncertainty_scores = np.maximum(stats["pwkl"], max_uncertainty_scores)
+                    else:
+                        raise NotImplementedError()
+
+                    # is_dangerous = stats['std'] > 0.08
                     safe_mask &= is_safe
 
                 # Apply safety mask
@@ -269,6 +313,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             # add "task_halted" to info
             for i_info, i_env in zip(to_range(this_global_slice), to_range(this_local_slice)):
                 last_info[i_info]['task_halted'] = not safe_mask[i_env]
+                last_info[i_info]['max_uncertainty_score'] = max_uncertainty_scores[i_env]
 
         # log
         log_data = dict()
@@ -278,6 +323,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
         prefix_halted_map = collections.defaultdict(list)
         prefix_success_map = collections.defaultdict(list)
         prefix_failure_map = collections.defaultdict(list)
+        prefix_max_uncertainty_score = collections.defaultdict(list)
         for i in range(n_inits):
             seed = self.env_seeds[i]
             prefix = self.env_prefixs[i]
@@ -294,6 +340,7 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             prefix_timeout_map[prefix].append(task_timeout)
             task_failed = not (task_success or task_halted or task_timeout)
             prefix_failure_map[prefix].append(task_failed)
+            prefix_max_uncertainty_score[prefix].append(last_info[i]['max_uncertainty_score'])
             #mean_force_on_human = last_info[i]['total_force_on_human_sum'] / len(this_rewards)
             #prefix_mean_forces_map[prefix].append(mean_force_on_human)
 
@@ -325,21 +372,25 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
         #
         for prefix, value in prefix_success_map.items():
             success = np.array(value)
+            log_data[prefix + 'success_episodes'] = list(success)
             log_data[prefix + 'success'] = np.mean(success)
             log_data[prefix + 'success_std'] = np.std(success)
 
         for prefix, value in prefix_halted_map.items():
             halted = np.array(value)
+            log_data[prefix + 'halted_episodes'] = list(halted)
             log_data[prefix + 'halted'] = np.mean(halted)
             log_data[prefix + 'halted_std'] = np.std(halted)
 
         for prefix, value in prefix_timeout_map.items():
             timeout = np.array(value)
+            log_data[prefix + 'timeout_episodes'] = list(timeout)
             log_data[prefix + 'timeout'] = np.mean(timeout)
             log_data[prefix + 'timeout_std'] = np.std(timeout)
 
         for prefix, value in prefix_failure_map.items():
             failure = np.array(value)
+            log_data[prefix + 'failure_episodes'] = list(failure)
             log_data[prefix + 'failure'] = np.mean(failure)
             log_data[prefix + 'failure_std'] = np.std(failure)
 
@@ -349,5 +400,12 @@ class AssistiveLowdimRunner(BaseLowdimRunner):
             name = prefix + f'mean_mean_forces'
             log_data[name] = np.mean(mean_forces)
         """
+        for prefix, value in prefix_max_uncertainty_score.items():
+            success = np.array(prefix_success_map[prefix]).astype(np.bool_)
+            uncertainties = np.array(value)
+            log_data[prefix + 'success_uncertainty_score_max_max'] = np.max(uncertainties[success]) if success.sum() > 0 else 0.0
+            log_data[prefix + 'success_uncertainty_score_max_min'] = np.min(uncertainties[success]) if success.sum() > 0 else 0.0
+            log_data[prefix + 'timeout_uncertainty_score_max_max'] = np.max(uncertainties[~success]) if (~success).sum() > 0 else 0.0
+            log_data[prefix + 'timeout_uncertainty_score_max_min'] = np.min(uncertainties[~success]) if (~success).sum() > 0 else 0.0
 
         return log_data

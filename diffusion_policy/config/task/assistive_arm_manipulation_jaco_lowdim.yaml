@@ -24,6 +24,9 @@ env_runner:
   n_envs: null
   task_name: *task_name
   robot_name: *robot_name
+  safety_model_path: null
+  safety_model_kwargs: null
+  record_zarr: false
 
 dataset:
   _target_: diffusion_policy.dataset.assistive_dataset.AssistiveLowdimDataset

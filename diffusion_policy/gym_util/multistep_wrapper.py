@@ -64,13 +64,41 @@ def stack_last_n_obs(all_obs, n_steps):
     return result
 
 
+def get_obs(observation_space, obs, n_steps=1):
+    assert(len(obs) > 0)
+    if isinstance(observation_space, spaces.Box):
+        return stack_last_n_obs(obs, n_steps)
+    elif isinstance(observation_space, spaces.Dict):
+        result = dict()
+        for key in observation_space.keys():
+            result[key] = stack_last_n_obs(
+                [o[key] for o in obs],
+                n_steps
+            )
+        return result
+    else:
+        raise RuntimeError('Unsupported space type')
+
+
+def get_act(action_space, act, n_steps=1):
+    if len(act) == 0:
+        if isinstance(action_space, spaces.Box):
+            return np.zeros((n_steps,) + action_space.shape[1:], 
+                dtype=action_space.dtype)
+        else:
+            raise NotImplementedError(f"{action_space} is not supported")
+    # Obs and acts are stacked similarly. So reusing the same func.
+    return get_obs(action_space, act, n_steps)
+
+
 class MultiStepWrapper(gym.Wrapper):
     def __init__(self, 
             env, 
             n_obs_steps, 
             n_action_steps, 
             max_episode_steps=None,
-            reward_agg_method='max'
+            reward_agg_method='max',
+            horizon=None,
         ):
         super().__init__(env)
         self._action_space = repeated_space(env.action_space, n_action_steps)
@@ -85,6 +113,21 @@ class MultiStepWrapper(gym.Wrapper):
         self.reward = list()
         self.done = list()
         self.info = defaultdict(lambda : deque(maxlen=n_obs_steps+1))
+
+        self._horizon = horizon
+        if self._horizon is not None:
+            self._cached_obs = deque(maxlen=self._horizon+1)    
+            self._cached_actions = deque(maxlen=self._horizon+1)    
+
+    @property
+    def cached_obs(self):
+        assert self._horizon and len(self._cached_obs) > 0
+        return get_obs(self.observation_space, self._cached_obs, n_steps=self._horizon)
+
+    @property
+    def cached_actions(self):
+        assert self._horizon  # and len(self._cached_actions) > 0
+        return get_act(self.action_space, self._cached_actions, n_steps=self._horizon)
     
     def reset(self):
         """Resets the environment using kwargs."""
@@ -94,6 +137,10 @@ class MultiStepWrapper(gym.Wrapper):
         self.reward = list()
         self.done = list()
         self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
+
+        if self._horizon is not None:
+            self._cached_obs = deque([obs], maxlen=self._horizon+1)    
+            self._cached_actions = deque([], maxlen=self._horizon+1)    
 
         obs = self._get_obs(self.n_obs_steps)
         return obs
@@ -107,6 +154,10 @@ class MultiStepWrapper(gym.Wrapper):
                 # termination
                 break
             observation, reward, done, info = super().step(act)
+
+            if self._horizon is not None:
+                self._cached_obs.append(observation)
+                self._cached_actions.append(act)
 
             self.obs.append(observation)
             self.reward.append(reward)
@@ -127,19 +178,7 @@ class MultiStepWrapper(gym.Wrapper):
         """
         Output (n_steps,) + obs_shape
         """
-        assert(len(self.obs) > 0)
-        if isinstance(self.observation_space, spaces.Box):
-            return stack_last_n_obs(self.obs, n_steps)
-        elif isinstance(self.observation_space, spaces.Dict):
-            result = dict()
-            for key in self.observation_space.keys():
-                result[key] = stack_last_n_obs(
-                    [obs[key] for obs in self.obs],
-                    n_steps
-                )
-            return result
-        else:
-            raise RuntimeError('Unsupported space type')
+        return get_obs(self.observation_space, self.obs, n_steps=n_steps)
 
     def _add_info(self, info):
         for key, value in info.items():

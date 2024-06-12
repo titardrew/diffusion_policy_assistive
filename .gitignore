@@ -1,3 +1,4 @@
+*.pth
 bin
 logs
 wandb

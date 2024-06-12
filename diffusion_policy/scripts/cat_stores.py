@@ -1,3 +1,4 @@
+import random
 import shutil
 
 from collections import defaultdict
@@ -64,12 +65,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", required=True, nargs="+")
     parser.add_argument("-o", "--output", required=True)
+    parser.add_argument("--max_stores", type=int, required=False, default=None)
+    parser.add_argument("--shuffle_stores", action="store_true", required=False)
     args = parser.parse_args()
     input_files = list(map(Path, args.input))
     for input_file in input_files:
         if not input_file.exists():
             raise FileNotFoundError(str(input_file))
     
+    if args.max_stores:
+        input_files = input_files[:args.max_stores]
+
+    if args.shuffle_stores:
+        random.shuffle(input_files)
+
     output_file = Path(args.output)
     output_file.parent.mkdir(exist_ok=True, parents=True)
 

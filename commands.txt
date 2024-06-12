@@ -110,3 +110,62 @@ HYDRA_FULL_ERROR=1 PYTHONPATH="." python train.py --config-dir=diffusion_policy/
 HYDRA_FULL_ERROR=1 PYTHONPATH="." python train.py --config-dir=diffusion_policy/config/ --config-name=train_diffusion_transformer_lowdim_assistive_workspace.yaml training.seed=42 training.device=cuda:0 hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_more_data_ppo_unerf_${name}_${task_name}' task.dataset_path=tmp_dataset/ppo_400k_1000.zarr
 
     # Further are in the experiments doc.
+
+
+# ----- Safety Models ------
+# feeding 250
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1/horizon_10_n_obs_1_n_act_2/checkpoints/best.ckpt -o out/feeding_250_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1/horizon_10_n_obs_1_n_act_2/checkpoints/best.ckpt -o out/feeding_250_state_predictor --safety_model feeding_250_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1/horizon_10_n_obs_1_n_act_2/checkpoints/best.ckpt -o out/feeding_250_vae --safety_model feeding_250_vae
+# feeding 100
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-100/horizon_10_n_obs_2_n_act_2/checkoint/best.ckpt -o out/feeding_100_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-100/horizon_10_n_obs_2_n_act_2/checkoint/best.ckpt -o out/feeding_100_state_predictor --safety_model feeding_100_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-100/horizon_10_n_obs_2_n_act_2/checkoint/best.ckpt -o out/feeding_100_vae --safety_model feeding_100_vae
+# feeding 50
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-50/horizon_10_n_obs_2_n_act_2/checkpoint/best.ckpt -o out/feeding_50_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-50/horizon_10_n_obs_2_n_act_2/checkpoint/best.ckpt -o out/feeding_50_state_predictor --safety_model feeding_50_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-50/horizon_10_n_obs_2_n_act_2/checkpoint/best.ckpt -o out/feeding_50_vae --safety_model feeding_50_vae
+# drinking
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/DrinkingJaco_1kk/latest.ckpt -o out/drinking_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/DrinkingJaco_1kk/latest.ckpt -o out/drinking_state_predictor --safety_model drinking_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/DrinkingJaco_1kk/latest.ckpt -o out/drinking_vae --safety_model drinking_vae
+# arm_manipulation
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ArmManipulationJaco_2.5kk/latest.ckpt -o out/arm_manipulation_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ArmManipulationJaco_2.5kk/latest.ckpt -o out/arm_manipulation_state_predictor --safety_model arm_manipulation_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ArmManipulationJaco_2.5kk/latest.ckpt -o out/arm_manipulation_vae --safety_model arm_manipulation_vae
+# scratch_itch
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ScratchItchJaco_2.5kk/latest.ckpt -o out/scratch_itch_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ScratchItchJaco_2.5kk/latest.ckpt -o out/scratch_itch_state_predictor --safety_model scratch_itch_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ScratchItchJaco_2.5kk/latest.ckpt -o out/scratch_itch_vae --safety_model scratch_itch_vae
+# bed_bathing
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/BedBathing_2.5kk/latest.ckpt -o out/bed_bathing_none
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/BedBathing_2.5kk/latest.ckpt -o out/bed_bathing_state_predictor --safety_model bed_bathing_state_predictor
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/BedBathing_2.5kk/latest.ckpt -o out/bed_bathing_vae --safety_model bed_bathing_vae
+
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ --save_path feeding_250_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path teleop_datasets/FeedingJaco-v1_100.zarr/ --save_path feeding_100_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path teleop_datasets/FeedingJaco-v1_50.zarr/ --save_path feeding_50_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/Drinking_1000k_ppo.zarr/ --save_path drinking_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/ArmManipulation_ppo.zarr/ --save_path arm_manipulation_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/ScratchItch_ppo.zarr/ --save_path scratch_itch_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/BedBathing_ppo.zarr/ --save_path bed_bathing_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+# feeding 250
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1/horizon_10_n_obs_1_n_act_2/checkpoints/best.ckpt -o out/feeding_250_state_predictor_ss --safety_model feeding_250_state_predictor_ss
+# feeding 100
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-100/horizon_10_n_obs_2_n_act_2/checkoint/best.ckpt -o out/feeding_100_state_predictor_ss --safety_model feeding_100_state_predictor_ss
+# feeding 50
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/TeleopDPCheckpoints/FeedingJaco-v1-50/horizon_10_n_obs_2_n_act_2/checkpoint/best.ckpt -o out/feeding_50_state_predictor_ss --safety_model feeding_50_state_predictor_ss
+# drinking
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/DrinkingJaco_1kk/latest.ckpt -o out/drinking_state_predictor_ss --safety_model drinking_state_predictor_ss
+# arm_manipulation
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ArmManipulationJaco_2.5kk/latest.ckpt -o out/arm_manipulation_state_predictor_ss --safety_model arm_manipulation_state_predictor_ss
+# scratch_itch
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/ScratchItchJaco_2.5kk/latest.ckpt -o out/scratch_itch_state_predictor_ss --safety_model scratch_itch_state_predictor_ss
+# bed_bathing
+HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/aty/Data/AssistiveDiffusion/Experiments/BedBathing_2.5kk/latest.ckpt -o out/bed_bathing_state_predictor_ss --safety_model bed_bathing_state_predictor_ss
+
+
+# voraus-like test commands
+
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ --test_parquet_path parquet_datasets/feeding_250_test.parquet --save_path feeding_250_ensemble_state_prediction_sm_To1_Ta1_H2_O1_.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --env_type BedBathing --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/BedBathing_ppo.zarr/ --test_parquet_path parquet_datasets/bed_bathing_test.parquet --save_path bed_bathing_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
