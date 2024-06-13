@@ -59,12 +59,12 @@ python safety_model/train.py \
     --metric recon \
     --batch_size 64 \
     --ensemble_size 1 \
-    --kl_weight 10 \
+    --kl_weight 1 \
     --test_freq 5 \
     --backend tb \
     --project test \
     --use_maximum \
-    --experiment_path runs/test_cvae_i5_g3_o1_kl10 \
+    --experiment_path runs/test_cvae_i5_g3_o1_kl1 \
     --device cuda \
     $MS_ARGS
 #    --lr 1e-4 \
