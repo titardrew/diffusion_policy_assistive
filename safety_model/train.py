@@ -3,10 +3,12 @@ from pathlib import Path
 import os
 import time
 
+import click
 import tensorboardX as tbx
 import numpy as np
 import pandas as pd
 import torch
+import tqdm
 
 from torch.utils.data import DataLoader
 
@@ -35,21 +37,24 @@ class StatsLogger:
         self.wandb = None
         self.writer: tbx.SummaryWriter = None
 
-        if experiment_path is not None:
-            if Path(experiment_path).exists():
-                timestr = time.strftime("%Y_%m_%d_%H_%M_%S")
-                experiment_path = f"{experiment_path.rstrip(os.sep)}_{timestr}"
-                assert not Path(experiment_path).exists(), experiment_path
-            if backend == "wandb":
-                import wandb
-                wandb.init(project=project if project else "anomaly")
-                self.wandb = wandb
-            elif backend == "tb":
-                self.writer = tbx.SummaryWriter(experiment_path, comment=comment)
-            else:
-                raise NotImplementedError(f"Unknown backend {backend}!")
+        if experiment_path is not None and Path(experiment_path).exists():
+            timestr = time.strftime("%Y_%m_%d_%H_%M_%S")
+            experiment_path = f"{experiment_path.rstrip(os.sep)}_{timestr}"
+            assert not Path(experiment_path).exists(), experiment_path
 
-        self._experiment_path = experiment_path
+        if backend == "wandb":
+            import wandb
+            wandb.init(project=project if project else "anomaly")
+            self.wandb = wandb
+        elif backend == "tb":
+            assert experiment_path is not None, "for tb, specify experiment_path"
+            self.writer = tbx.SummaryWriter(experiment_path, comment=comment)
+        else:
+            raise NotImplementedError(f"Unknown backend {backend}!")
+    
+    def finish(self):
+        if self.wandb:
+            self.wandb.finish()
 
     def _add_scalars(self, main_tag, loss_dict, iteration):
         log_dict = {f"{main_tag}/{k}": v for k, v in loss_dict.items()}
@@ -218,7 +223,6 @@ class MultibatchDataLoader:
 
 ENV_TYPES = ["Feeding", "Drinking", "ArmManipulation", "BedBathing", "ScratchItch"]
 
-import click
 @click.command()
 @click.option("--zarr_path", default="teleop_datasets/FeedingJaco-v1.zarr", type=Path, help="Path to a datset.")
 @click.option("--test_parquet_path", default=None, type=Path, help="Path to a test parquet datset.")
@@ -229,8 +233,10 @@ import click
 @click.option("--out_obs_horizon", default=1, help="Number of obs as out from the safety model.")
 @click.option("--max_episode_length", default=200, help="Total number of obs/acts in a sample. Used only in full_episode mode")
 @click.option("--batch_size", default=256)
+@click.option("--save_freq", default=50)
 @click.option("--test_freq", default=8)
 @click.option("--test_zarr_freq", default=0)
+@click.option("--test_granularity", default=10, help="Time step size for 'playback' tests. 10 by default.")
 @click.option("--env_type", default="Feeding", type=click.Choice(ENV_TYPES), help="Environment type.")
 @click.option("--lr", default=3e-4, help="Learing rate.")
 @click.option("--kl_weight", default=5, help="KL weight for CVAE.")
@@ -246,6 +252,38 @@ import click
 @click.option("--device", default="cpu", help="Device.")
 @click.option("--use_times", is_flag=True, show_default=True, default=False, help="Add times to inputs.")
 @click.option("--use_maximum", is_flag=True, show_default=True, default=False, help="Add max score up to t as a score for t.")
+def _train(
+    zarr_path: Path,
+    test_parquet_path: Path = None,
+    test_zarr_path: Path = None,  # for debugging
+    num_epochs=50,
+    in_horizon=1,
+    gap_horizon=1,
+    out_obs_horizon=1,
+    max_episode_length=200,
+    batch_size=256,
+    save_freq=50,
+    test_freq=8,
+    test_zarr_freq=0,
+    test_granularity=10,
+    env_type="Feeding",
+    lr=3e-4,
+    kl_weight=5,
+    val_ratio=0.1,
+    save_path="ensemble_state_prediction_sm3.pth",
+    ensemble_size=5,
+    model_type="state_predictor",
+    metric=None,
+    experiment_path=None,
+    project=None,
+    backend="wandb",
+    full_episode=False,
+    device="cpu",
+    use_times=False,
+    use_maximum=False,
+):
+    train(**locals)
+
 def train(
     zarr_path: Path,
     test_parquet_path: Path = None,
@@ -256,8 +294,10 @@ def train(
     out_obs_horizon=1,
     max_episode_length=200,
     batch_size=256,
+    save_freq=50,
     test_freq=8,
     test_zarr_freq=0,
+    test_granularity=10,
     env_type="Feeding",
     lr=3e-4,
     kl_weight=5,
@@ -359,7 +399,7 @@ def train(
                 env_type=env_type,
             )
     
-    if model_type == "state_predictor":
+    if "state_predictor" in model_type:
         from safety_model.state_prediction import EnsembleStatePredictionSM
         DEVICE = device
         safety_model = EnsembleStatePredictionSM(
@@ -372,6 +412,8 @@ def train(
             ensemble_size=ensemble_size,
             device=DEVICE,
             use_times=use_times,
+            backbone_type="mlp" if "mlp" in model_type else "cnn",
+            use_input_hack="hack" in model_type,
         ).to(DEVICE)
         safety_model.set_normalizer(normalizer.to(DEVICE))
     elif model_type == "vae":
@@ -384,6 +426,7 @@ def train(
             horizon=max_horizon,
             ensemble_size=ensemble_size,
             hidden_size=100,
+            learning_rate=lr,
             embedding_size=64,
             device=DEVICE,
         ).to(DEVICE)
@@ -425,6 +468,7 @@ def train(
     stats_logger = StatsLogger(experiment_path=experiment_path, comment="test comment", project=project, backend=backend)
 
     optimizer = torch.optim.Adam(safety_model.parameters(), lr=lr)
+    scheduler = safety_model.get_scheduler(optimizer)
 
     def _val_epoch():
         with torch.no_grad():
@@ -442,7 +486,6 @@ def train(
             return loss_dict
 
     def _test_zarr_epoch():
-        import tqdm
         with torch.no_grad():
             safety_model.eval()
             loss_dict = collections.defaultdict(list)
@@ -458,86 +501,100 @@ def train(
             return loss_dict
     
     def _test_epoch():
-        with torch.no_grad():
-            result_list = []
-            safety_model.eval()
-            import tqdm
-            test_val_loss_dict = collections.defaultdict(list)
-            for _, (tensors, labels) in tqdm.tqdm(enumerate(test_dataloader)):
-                assert tensors.shape[0] == 1, "Batches aren't supported yet!"
-                tensor = tensors[0].float().to(safety_model.device)
+        result_list = []
+        safety_model.eval()
+        test_val_loss_dict = collections.defaultdict(list)
+        for _, (tensors, labels) in tqdm.tqdm(enumerate(test_dataloader)):
+            assert tensors.shape[0] == 1, "Batches aren't supported yet!"
+            tensor = tensors[0].float().to(safety_model.device)
 
-                # TODO: tensors -> anomality_score
-                anomality_score = torch.ones(tensors.shape[0], device=safety_model.device) * (-torch.inf)
+            # TODO: tensors -> anomality_score
+            anomality_score = torch.ones(tensors.shape[0], device=safety_model.device) * (-torch.inf)
 
-                # for each sequence in test, we "play" it and save the anomality scores
-                # we only save TIME_GRAN anomality scores at time steps that we call "milestones".
-                TIME_GRAN = 21
-                MAX_T = 200
-                milestone_ts = np.linspace(0, MAX_T, TIME_GRAN, dtype=np.int_).tolist()[1:] + [np.inf]  # exclude 0 and add inf to the end
-                milestone_id = 0
+            # for each sequence in test, we "play" it and save the anomality scores
+            # we only save TIME_GRAN anomality scores at time steps that we call "milestones".
+            TIME_GRAN = 21
+            MAX_T = 200
+            milestone_ts = np.linspace(0, MAX_T, TIME_GRAN, dtype=np.int_).tolist()[1:] + [np.inf]  # exclude 0 and add inf to the end
+            milestone_id = 0
 
-                epi_len = tensor.shape[0]
+            epi_len = tensor.shape[0]
+            if full_episode:
+                # pad the tensor
+                # [s_a0, s_a1, ..., s_aT, 0 ... 0], len=max_epi_len (e.g. 200)
+                tensor_padded = torch.zeros((max_episode_length, tensor.shape[1]))
+                tensor_padded[:epi_len] = tensor
+                tensor = tensor_padded
+                start_index = 1 + gap_horizon + out_obs_horizon
+            else:
+                # no need to pad, just start as soon as there is enough input/output steps.
+                start_index = in_horizon + gap_horizon + out_obs_horizon
+
+            if hasattr(safety_model, "_segment_first") and safety_model._segment_first:
+                obs = tensor[None, :, :observation_size]
+                act = tensor[None, :, observation_size:]
+                length = torch.tensor([[epi_len]])  # length of a sample
+                safety_model.segment_anomaly_and_remember(
+                    {"obs": obs.clone(), "action": act.clone(), "length": length.clone()},
+                )
+
+            # start "playing the episode"
+            milestone_scores = {}
+            if test_granularity != milestone_ts[1] - milestone_ts[0]:
+                ts_list = range(0, MAX_T+test_granularity, test_granularity)
+            else:
+                ts_list = milestone_ts[:-1]
+
+            for i_step in ts_list:
+                if i_step < start_index: continue
+                if i_step > epi_len: continue
                 if full_episode:
-                    # pad the tensor
-                    # [s_a0, s_a1, ..., s_aT, 0 ... 0], len=max_epi_len (e.g. 200)
-                    tensor_padded = torch.zeros((max_episode_length, tensor.shape[1]))
-                    tensor_padded[:epi_len] = tensor
-                    tensor = tensor_padded
-                    start_index = 1 + gap_horizon + out_obs_horizon
+                    obs = torch.zeros((1, max_episode_length, observation_size), device=safety_model.device)
+                    act = torch.zeros((1, max_episode_length, action_size), device=safety_model.device)
+                    obs[:, :i_step] = tensor[:i_step, :observation_size]
+                    act[:, :i_step] = tensor[:i_step, observation_size:]
+                    if i_step < max_episode_length:
+                        obs[:, i_step:] = tensor[i_step-1, :observation_size]
+                    length = torch.tensor([[i_step]])  # length of a sample
                 else:
-                    # no need to pad, just start as soon as there is enough input/output steps.
-                    start_index = in_horizon + gap_horizon + out_obs_horizon
+                    horizon = in_horizon + gap_horizon + out_obs_horizon
+                    obs = tensor[None, i_step - horizon: i_step, :observation_size]
+                    act = tensor[None, i_step - horizon: i_step, observation_size:]
+                    length = torch.tensor([[i_step]])  # length of a sample
 
-                # start "playing the episode"
-                milestone_scores = {}
-                for i_step in milestone_ts[:-1]:
-                    if i_step < start_index: continue
-                    if i_step > epi_len: continue
-                    if full_episode:
-                        obs = torch.zeros((1, max_episode_length, observation_size), device=safety_model.device)
-                        act = torch.zeros((1, max_episode_length, action_size), device=safety_model.device)
-                        obs[:, :i_step] = tensor[:i_step, :observation_size]
-                        act[:, :i_step] = tensor[:i_step, observation_size:]
-                        if i_step < max_episode_length:
-                            obs[:, i_step:] = tensor[i_step-1, :observation_size]
-                        length = torch.tensor([[i_step]])  # length of a sample
-                    else:
-                        horizon = in_horizon + gap_horizon + out_obs_horizon
-                        obs = tensor[None, i_step - horizon: i_step, :observation_size]
-                        act = tensor[None, i_step - horizon: i_step, observation_size:]
-                        length = torch.tensor([[i_step]])  # length of a sample
+                _, _, score = safety_model.check_safety_runner(
+                    {"obs": obs.clone(), "action": act.clone(), "length": length.clone()},
+                    return_stats=True,
+                    return_score=True,
+                )
+                if use_maximum:
+                    anomality_score = torch.maximum(anomality_score, torch.from_numpy(score).to(safety_model.device))
+                else:
+                    anomality_score[:] = torch.from_numpy(score).to(safety_model.device)
 
-                    _, _, score = safety_model.check_safety_runner(
-                        {"obs": obs.clone(), "action": act.clone(), "length": length.clone()},
-                        return_stats=True,
-                        return_score=True,
-                    )
-                    if use_maximum:
-                        anomality_score = torch.maximum(anomality_score, torch.from_numpy(score).to(safety_model.device))
-                    else:
-                        anomality_score[:] = torch.from_numpy(score).to(safety_model.device)
+                multibatch = multi_repeat({"obs": obs, "action": act, "length": length},
+                    safety_model.ensemble_size)
+                for k, v in safety_model.compute_validation_loss(multibatch).items():
+                    test_val_loss_dict[k].append(v)
+                
+                # fill the milestone's anomality score
+                if i_step >= milestone_ts[milestone_id]:
+                    while i_step >= milestone_ts[milestone_id]:
+                        milestone_id += 1
+                    milestone_scores[f"score_{milestone_ts[milestone_id - 1]:.2f}"] = anomality_score.cpu()
 
-                    multibatch = multi_repeat({"obs": obs, "action": act, "length": length},
-                        safety_model.ensemble_size)
-                    for k, v in safety_model.compute_validation_loss(multibatch).items():
-                        test_val_loss_dict[k].append(v)
-                    
-                    # fill the milestone's anomality score
-                    if i_step >= milestone_ts[milestone_id]:
-                        while i_step >= milestone_ts[milestone_id]:
-                            milestone_id += 1
-                        milestone_scores[f"score_{milestone_ts[milestone_id - 1]:.2f}"] = anomality_score.cpu()
+            if hasattr(safety_model, "_segment_first") and safety_model._segment_first:
+                safety_model.clear_segment_anomaly()
 
-                # Append the anomaly score and the labels to the results list.
-                for j in range(anomality_score.shape[0]):
-                    # HACK(aty): anomalies are less than 200 timesteps in length.
-                    labels["anomaly"] = [(epi_len == 200)]
-                    labels["category"] = ["FAILURE" if (epi_len == 200) else "NORMAL_OPERATION"]
-                    result_labels = {k: v[j].item() if isinstance(v, torch.Tensor) else v[j] for k, v in labels.items()}
-                    result_labels.update(score=anomality_score[j].item())
-                    result_labels.update({k: v[j] for k, v in milestone_scores.items()})
-                    result_list.append(result_labels)
+            # Append the anomaly score and the labels to the results list.
+            for j in range(anomality_score.shape[0]):
+                # HACK(aty): anomalies are less than 200 timesteps in length.
+                labels["anomaly"] = [(epi_len == MAX_T)]
+                labels["category"] = ["FAILURE" if (epi_len == MAX_T) else "NORMAL_OPERATION"]
+                result_labels = {k: v[j].item() if isinstance(v, torch.Tensor) else v[j] for k, v in labels.items()}
+                result_labels.update(score=anomality_score[j].item())
+                result_labels.update({k: v[j] for k, v in milestone_scores.items()})
+                result_list.append(result_labels)
 
         # calculate metrics for each milestone
         results = pd.DataFrame(result_list)
@@ -556,6 +613,17 @@ def train(
         for k, v in test_metrics.items():
             mean_test_metrics[k] = np.mean(v)
         return mean_test_metrics
+    
+    def _save(epoch=None):
+        Path(save_path).parent.mkdir(exist_ok=True)
+        epoch = epoch if epoch else "final"
+        save_path = save_path.format(epoch=epoch)
+        assert Path(save_path).parent.exists(), save_path
+        if isinstance(safety_model, MVTFlowSM):
+            torch.save(safety_model.state_dict(), save_path)
+        else:
+            torch.save(safety_model, save_path)
+        print(f"[SAVE ] Model (epoch={epoch}) has been saved to {save_path}")
 
     val_loss_dict = _val_epoch()
     stats_logger.add_val_metrics(val_loss_dict, iteration=0)
@@ -570,6 +638,7 @@ def train(
         losses = []
         safety_model.train()
         for _, multibatch in enumerate(train_dataloader):
+            optimizer.zero_grad()
             for k, v in multibatch.items():
                 multibatch[k] = v.to(safety_model.device)
             loss, _ = safety_model.compute_loss(multibatch)
@@ -578,6 +647,8 @@ def train(
             optimizer.step()
             optimizer.zero_grad()
             losses.append(loss.item())
+
+        scheduler.step()
 
         val_loss_dict = _val_epoch()
         stats_logger.add_train_metrics({"loss": np.mean(losses)}, iteration=i_epoch)
@@ -590,9 +661,12 @@ def train(
             if i_epoch % test_freq == 0 or i_epoch == num_epochs:
                 test_loss_dict = _test_epoch()
                 stats_logger.add_test_metrics(test_loss_dict, iteration=i_epoch)
-    
-    torch.save(safety_model, save_path)
-    print(f"Model saved to {save_path}")
+        if save_freq > 0 and i_epoch % save_freq == 1:
+            _save(i_epoch)
+        
+
+    _save()
+    stats_logger.finish()
 
 if __name__ == "__main__":
-    train()
+    _train()

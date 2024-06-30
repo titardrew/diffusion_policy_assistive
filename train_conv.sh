@@ -49,22 +49,62 @@ export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$LD_LIBRARY_PATH
 #     --device cuda \
 #     $MS_ARGS
 
-export MS_ARGS="--num_epochs 1000 --in_horizon 5 --gap_horizon 3 --out_obs_horizon 1 --model_type cvae"
+#  export MS_ARGS="--num_epochs 400 --in_horizon 16 --gap_horizon 0 --out_obs_horizon 16 --model_type cvae"
+#  python safety_model/train.py \
+#      --test_parquet_path parquet_datasets/feeding_250_test.parquet \
+#      --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ \
+#      --test_zarr_path out_voraus/feeding_250/zarr_recording/cat.zarr/ \
+#      --save_path test_cvae_i16_g0_o16.pth \
+#      --env_type Feeding \
+#      --metric recon \
+#      --batch_size 64 \
+#      --ensemble_size 1 \
+#      --kl_weight 1 \
+#      --test_freq 5 \
+#      --backend tb \
+#      --project test \
+#      --use_maximum \
+#      --experiment_path runs/test_cvae_i16_g0_o16_kl1 \
+#      --device cuda \
+#      $MS_ARGS
+#  
+#  export MS_ARGS="--num_epochs 400 --in_horizon 32 --gap_horizon 0 --out_obs_horizon 32 --model_type cvae"
+#  python safety_model/train.py \
+#      --test_parquet_path parquet_datasets/feeding_250_test.parquet \
+#      --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ \
+#      --test_zarr_path out_voraus/feeding_250/zarr_recording/cat.zarr/ \
+#      --save_path test_cvae_i32_g0_o32.pth \
+#      --env_type Feeding \
+#      --metric recon \
+#      --batch_size 64 \
+#      --ensemble_size 1 \
+#      --kl_weight 1 \
+#      --test_freq 5 \
+#      --backend tb \
+#      --project test \
+#      --use_maximum \
+#      --experiment_path runs/test_cvae_i32_g0_o32_kl1 \
+#      --device cuda \
+#      $MS_ARGS
+#  #    --lr 1e-4 \
+#  #    --use_times \
+
+
+export MS_ARGS="--num_epochs 500 --full_episode --in_horizon 0 --gap_horizon 0 --out_obs_horizon 16 --model_type cvae"
 python safety_model/train.py \
     --test_parquet_path parquet_datasets/feeding_250_test.parquet \
     --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ \
     --test_zarr_path out_voraus/feeding_250/zarr_recording/cat.zarr/ \
-    --save_path test_cvae_i5_g3_o1.pth \
+    --save_path test_cvae_i0_g0_o16.pth \
     --env_type Feeding \
     --metric recon \
     --batch_size 64 \
     --ensemble_size 1 \
-    --kl_weight 1 \
+    --kl_weight 10 \
     --test_freq 5 \
     --backend tb \
     --project test \
-    --use_maximum \
-    --experiment_path runs/test_cvae_i5_g3_o1_kl1 \
+    --experiment_path runs/test_cvae_i0_g0_o16_kl10 \
     --device cuda \
     $MS_ARGS
 #    --lr 1e-4 \

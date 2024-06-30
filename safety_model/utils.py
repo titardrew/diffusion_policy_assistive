@@ -21,7 +21,8 @@ def multi_repeat(x, times):
         # => [Times, Batch, Horizon, Dim]
         return x.repeat([times, 1, 1, 1])
     if isinstance(x, dict):
-        return {key: _repeat(val) for key, val in x.items()}
+        a = {key: _repeat(val) for key, val in x.items()}
+        return a
     else:
         return _repeat(x)
 

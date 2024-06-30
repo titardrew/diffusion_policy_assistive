@@ -17,9 +17,11 @@ class EnsembleStatePredictionSM(SafetyModel):
         device="cpu",
         ensemble_size=5,
         use_times=False,
+        backbone_type="mlp",
+        use_input_hack=False,
     ):
         """
-            I/O comprehensive examples
+            I/O examples
 
                 [] - input
                 {} - output
@@ -28,7 +30,7 @@ class EnsembleStatePredictionSM(SafetyModel):
 
                 in_horizon = 4
                 out_obs_horizon = 2
-                horizon_gap = 1
+                gap_horizon = 1
 
                 [ s0   s1 ] s2 { s3   s4 }
                 [ a0   a1 ] a2   a3   a4
@@ -37,7 +39,7 @@ class EnsembleStatePredictionSM(SafetyModel):
 
                 in_horizon = 0  => full episode mode
                 out_obs_horizon = 2
-                horizon_gap = 1
+                gap_horizon = 1
 
                 [ s0 ] s1 { s2   s3 }
                 [ a0 ] a1 { a2   a3 }
@@ -66,6 +68,7 @@ class EnsembleStatePredictionSM(SafetyModel):
         self.predict_delta = predict_delta
         self.ensemble_size = ensemble_size
         self.device = device
+        self.use_input_hack = use_input_hack
 
         # Add time embedding of 4 freqs to input observations.
         self.use_times = use_times
@@ -82,6 +85,7 @@ class EnsembleStatePredictionSM(SafetyModel):
             hidden_size=64,
             use_decay=False,
             device=device,
+            backbone_type=backbone_type,
         )
 
         self.normalizer = None
@@ -126,13 +130,19 @@ class EnsembleStatePredictionSM(SafetyModel):
 
             input_act = torch.zeros_like(multibatch['action'], device=self.device)
             input_obs = torch.zeros_like(multibatch['obs'], device=self.device)
-            input_time = self.time_encoding((E, B, T), self.time_size, 0, T, device=self.device)
+            input_time = self.time_encoding((E, B, T), self.time_size, torch.zeros_like(input_length), T, device=self.device)
             # HACK(aty): couldn't find a better way to batch the slicing.
             # zeroing out everything after the input horizon.
-            for i_ens, i_ens_horizons in enumerate(in_horizon):
-                for i_seq, i_seq_horizon in enumerate(i_ens_horizons):
-                    input_act[i_ens, i_seq, :i_seq_horizon] = multibatch['action'][i_ens, i_seq, :i_seq_horizon]
-                    input_obs[i_ens, i_seq, :i_seq_horizon] = multibatch['obs'][i_ens, i_seq, :i_seq_horizon]
+            if self.use_input_hack:  # weird hack that works for some reason
+                for i_ens, i_ens_horizons in enumerate(in_horizon):
+                    for i_seq, i_seq_horizon in enumerate(i_ens_horizons):
+                        input_act[i_ens, i_seq, :i_seq_horizon] = multibatch['action'][i_ens, i_seq, i_seq_horizon-1]
+                        input_obs[i_ens, i_seq, :i_seq_horizon] = multibatch['obs'][i_ens, i_seq, i_seq_horizon-1]
+            else:
+                for i_ens, i_ens_horizons in enumerate(in_horizon):
+                    for i_seq, i_seq_horizon in enumerate(i_ens_horizons):
+                        input_act[i_ens, i_seq, :i_seq_horizon] = multibatch['action'][i_ens, i_seq, :i_seq_horizon]
+                        input_obs[i_ens, i_seq, :i_seq_horizon] = multibatch['obs'][i_ens, i_seq, :i_seq_horizon]
         else:
             in_horizon = self.in_horizon
             input_act = multibatch['action'][..., :in_horizon, :]

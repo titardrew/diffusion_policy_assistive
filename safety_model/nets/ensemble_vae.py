@@ -245,7 +245,7 @@ class EnsembleVAE(nn.Module):
         self.in_size = in_size
         self.in_horizon = in_horizon
         self.hidden_size = hidden_size
-        self.kl_weight = 0.5
+        self.kl_weight = 1.0
         self.device = device
         self.embedding_size = embedding_size
         self.ensemble_size = ensemble_size
@@ -264,7 +264,7 @@ class EnsembleVAE(nn.Module):
         z = reparam(mean, logvar)
         z_all = z
 
-        if ensemble_sampling:
+        if self.ensemble_size > 1 and ensemble_sampling:
             z[:] = z.mean(dim=0, keepdim=True)
 
         x_recon = self.backbone.decode(z)

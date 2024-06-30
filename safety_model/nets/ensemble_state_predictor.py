@@ -318,6 +318,7 @@ class EnsembleModel(nn.Module):
         learning_rate=1e-3,
         use_decay=False,
         device='cpu',
+        backbone_type="mlp",
     ):
         super(EnsembleModel, self).__init__()
         self.hidden_size = hidden_size
@@ -327,25 +328,30 @@ class EnsembleModel(nn.Module):
         self.out_size = out_size
         self.out_horizon = out_horizon
         self.output_dim = out_size * out_horizon
-        # Add variance output
-        self.backbone = EnsembleFCBackbone(
-            in_size, in_horizon,
-            out_size*2, out_horizon,
-            ensemble_size, hidden_size)
-        #self.use_decay = True
+        
+        if backbone_type == "mlp":
+            # Add variance output
+            self.backbone = EnsembleFCBackbone(
+                in_size, in_horizon,
+                out_size*2, out_horizon,
+                ensemble_size, hidden_size)
+            self.use_decay = True
 
-        backbone_fn = lambda: Conv1DBackbone(
-            in_size, in_horizon,
-            out_size*2, out_horizon,
-            hidden_num_channels=15,
-        )
-        backbone_fn_2 = lambda: ResidualConv1DBackbone(
-            in_size, in_horizon,
-            out_size*2, out_horizon,
-            down_dims=[64, 128, 256],
-            unet=False,
-        )
-        self.backbone = EnsembleWrapper(backbone_fn, ensemble_size)
+        elif backbone_type == "cnn":
+            backbone_fn = lambda: Conv1DBackbone(
+                in_size, in_horizon,
+                out_size*2, out_horizon,
+                hidden_num_channels=15,
+            )
+            backbone_fn_2 = lambda: ResidualConv1DBackbone(
+                in_size, in_horizon,
+                out_size*2, out_horizon,
+                down_dims=[64, 128, 256],
+                unet=False,
+            )
+            self.backbone = EnsembleWrapper(backbone_fn, ensemble_size)
+        else:
+            raise NotImplementedError(f"Backbone '{backbone_type}' is not supported")
 
         self.max_logvar = nn.Parameter((torch.ones((1, self.out_horizon, out_size)).float() / 2).to(device), requires_grad=False)
         self.min_logvar = nn.Parameter((-torch.ones((1, self.out_horizon, out_size)).float() * 5).to(device), requires_grad=False)

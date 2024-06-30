@@ -69,7 +69,7 @@ class ConditionalVariationalAutoEncoderSM(SafetyModel):
 
         self._transformer = Transformer(
             d_model=256,
-            dropout=0.1,
+            dropout=0.4,
             nhead=8,
             dim_feedforward=2048,
             num_encoder_layers=4,

@@ -14,7 +14,8 @@ python safety_model/train.py \
     --lr 8e-4 \
     --batch_size 32 \
     --test_freq 5 \
-    --tb_experiment_path runs/test_mvt_flow_feeding \
+    --backend tb \
+    --experiment_path runs/test_mvt_flow_feeding_grad \
     --device cuda \
     $MS_ARGS
 

@@ -36,6 +36,7 @@ class VariationalAutoEncoderSM(SafetyModel):
         device="cpu",
         ensemble_size=5,
         hidden_size=200,
+        learning_rate=1e-3,
         embedding_size=32,
     ):
         """
@@ -64,6 +65,7 @@ class VariationalAutoEncoderSM(SafetyModel):
         self.net = EnsembleVAE(
             in_size=in_size,
             in_horizon=horizon,
+            learning_rate=learning_rate,
             embedding_size=self.embedding_size,
             ensemble_size=self.ensemble_size,
             hidden_size=hidden_size,
@@ -146,29 +148,32 @@ class VariationalAutoEncoderSM(SafetyModel):
         obs_act = torch.cat([obs_act['obs'], obs_act['action']], axis=-1)
         loss, losses_info = self.net.loss(obs_act, obs_act_recon, z_mu, z_logvar, keep_batch=inference)
 
-        # [Ensemble_size, Batch, EmbedDim] -> [Batch]
-        z_std = z.std(dim=0).mean(dim=-1)
-        pw_kl = mean_pairwise_kl_divergence(z_mu, z_logvar)
-        if not inference:
-            z_std = torch.sum(z_std, dim=0)
-            pw_kl = torch.sum(pw_kl, dim=0)
+        if self.ensemble_size > 1:
+            # [Ensemble_size, Batch, EmbedDim] -> [Batch]
+            z_std = z.std(dim=0).mean(dim=-1)
+            pw_kl = mean_pairwise_kl_divergence(z_mu, z_logvar)
+            if not inference:
+                z_std = torch.sum(z_std, dim=0)
+                pw_kl = torch.sum(pw_kl, dim=0)
 
-        losses_info['metric_z_std'] = z_std
-        losses_info['metric_pw_kl'] = pw_kl
+            losses_info['metric_z_std'] = z_std
+            losses_info['metric_pw_kl'] = pw_kl
 
         return loss, losses_info
     
     def compute_validation_loss(self, multibatch):
         with torch.no_grad():
             _, loss_dict = self.compute_loss(multibatch)
-            # [Ensemble x Batch x Dims]
-            _, ens_loss_dict = self.compute_loss(multibatch, inference=True)
-
-            for key, val in ens_loss_dict.items():
-                loss_dict[f"ens_{key}"] = val.mean()
 
             for key, val in loss_dict.items():
                 loss_dict[key] = val.cpu().numpy()
+
+            if self.ensemble_size > 1:
+                # [Ensemble x Batch x Dims]
+                _, ens_loss_dict = self.compute_loss(multibatch, inference=True)
+
+                for key, val in ens_loss_dict.items():
+                    loss_dict[f"ens_{key}"] = val.mean()
              
             return loss_dict
 
@@ -176,26 +181,32 @@ class VariationalAutoEncoderSM(SafetyModel):
         assert use_recon or use_pw_kl
 
         with torch.no_grad():
-            #input_act, input_obs, input_length = self.preprocess(batch)
-            #multibatch = {'action': input_act, 'obs': input_obs, 'length': input_length}
-
             _, losses_info = self.compute_loss(batch, inference=True)
             recon_loss_batch = losses_info["recon_loss"].cpu().numpy()
-            z_std_batch = losses_info["metric_z_std"].cpu().numpy()
-            pw_kl_batch = losses_info["metric_pw_kl"].cpu().numpy()
+            if self.ensemble_size > 1:
+                z_std_batch = losses_info["metric_z_std"].cpu().numpy()
+                pw_kl_batch = losses_info["metric_pw_kl"].cpu().numpy()
             is_safe = np.ones_like(recon_loss_batch, dtype=np.bool_)
             if use_recon:
                 is_safe &= recon_loss_batch < recon_thresh
             if use_pw_kl:
+                assert self.ensemble_size > 1
                 is_safe &= pw_kl_batch < pw_kl_thresh
             if rr_log:
                 import rerun as rr
-                rr.log("safety_model/ensemble_vae_recon", rr.Scalar(recon_loss_batch[0]))
-                rr.log("safety_model/ensemble_vae_z_std", rr.Scalar(z_std_batch[0]))
-                rr.log("safety_model/ensemble_vae_pw_kl", rr.Scalar(pw_kl_batch[0]))
                 rr.log("safety_model/ensemble_vae_safe", rr.Scalar(float(is_safe[0])))
+                rr.log("safety_model/ensemble_vae_recon", rr.Scalar(recon_loss_batch[0]))
+                if self.ensemble_size > 1:
+                    rr.log("safety_model/ensemble_vae_z_std", rr.Scalar(z_std_batch[0]))
+                    rr.log("safety_model/ensemble_vae_pw_kl", rr.Scalar(pw_kl_batch[0]))
 
-            return is_safe, {'recon': recon_loss_batch, 'pwkl': pw_kl_batch} 
+            out_metrics = {'recon': recon_loss_batch}
+            if self.ensemble_size > 1:
+                out_metrics.update({
+                    'pwkl': pw_kl_batch,
+                    'z_std': z_std_batch,
+                })
+            return is_safe, out_metrics
     
     def reset(self):
         pass

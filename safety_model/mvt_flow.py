@@ -49,22 +49,28 @@ class MVTFlowSM(SafetyModel):
             milestones=[11, 61],
             gamma=0.1,
         )
-        n_signals = observation_size + action_size
+        self.need_padding = (observation_size + action_size) % 2 == 1
+        n_signals = observation_size + action_size + int(self.need_padding)
         n_times = max_horizon
         # Initialize the model, optimizer and scheduler.
         self.net = NormalizingFlow((n_signals, n_times), configuration).float().to(device)
         #optimizer = torch.optim.Adam(model.parameters(), lr=configuration.learning_rate)
-        #scheduler = optim.lr_scheduler.MultiStepLR(
-        #    optimizer, milestones=configuration.milestones, gamma=configuration.gamma
-        #)
+        self.milestones = configuration.milestones
+        self.gamma = configuration.gamma
 
         self.normalizer = None
+        self._segment_first = False
 
         self.params = {
             "metric": "loss",
 
             "loss_threshold": 1.0,
         }
+
+    def get_scheduler(self, optimizer):
+        return torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=self.milestones, gamma=self.gamma
+        )
  
     def set_normalizer(self, normalizer):
         self.normalizer = normalizer
@@ -74,8 +80,13 @@ class MVTFlowSM(SafetyModel):
             multibatch['obs'] = self.normalizer['obs'].normalize(multibatch['obs'])
             multibatch['action'] = self.normalizer['action'].normalize(multibatch['action'])
 
+        if self.need_padding:
+            pad = [torch.zeros((*multibatch['action'].shape[:-1], 1), device=self.device, dtype=multibatch['action'].dtype)]
+        else:
+            pad = []
+
         # [Batch, Time, Obs] + [Batch, Time, Act] => [Batch, Time, ObsAct]
-        obs_act = torch.cat([multibatch['obs'], multibatch['action']], axis=-1)
+        obs_act = torch.cat([multibatch['obs'], multibatch['action']] + pad, axis=-1)
         #obs_act = torch.cat([multibatch['obs']], axis=-1)
         
         latent_z, jacobian = self.net(obs_act.transpose(2, 1))
@@ -132,16 +143,29 @@ class MVTFlowSM(SafetyModel):
 
     def check_safety(self, batch, loss_thresh=1.0, rr_log=False):
         with torch.no_grad():
-
-            _, losses_info = self.compute_loss(batch, per_sample=True)
-            loss_batch = losses_info["loss"].cpu().numpy()
-            is_safe = loss_batch < loss_thresh
+            if self._segment_first:
+                assert self.cached_anomaly_segmentation is not None
+                max_len = batch['length'].squeeze().item()
+                # [B, T, ObsAct]
+                grad_obs_act, nll, epi_len = self.cached_anomaly_segmentation
+                epi_len = epi_len.squeeze().item()
+                grad_per_time = grad_obs_act[:, :epi_len].sum(-1)
+                # -> [B, T]
+                weights = grad_per_time / (grad_per_time.sum(dim=-1, keepdim=True) + 1e-6)
+                scores = weights * nll
+                # -> [B]
+                scores = scores[:, :max_len].sum(dim=-1)
+                score_batch = scores.cpu().numpy()
+            else:
+                _, losses_info = self.compute_loss(batch, per_sample=True)
+                score_batch = losses_info["loss"].cpu().numpy()
+            is_safe = score_batch < loss_thresh
             if rr_log:
                 import rerun as rr
-                rr.log("safety_model/mvt_flow_loss", rr.Scalar(loss_batch[0]))
+                rr.log("safety_model/mvt_flow_loss", rr.Scalar(score_batch[0]))
                 rr.log("safety_model/mvt_flow_safe", rr.Scalar(float(is_safe[0])))
 
-            return is_safe, {'loss': loss_batch} 
+            return is_safe, {'loss': score_batch} 
     
     def reset(self):
         pass
@@ -174,3 +198,36 @@ class MVTFlowSM(SafetyModel):
                 )
             else:
                 return is_safe
+    
+    def segment_anomaly_and_remember(self, batch):
+        #with torch.no_grad():
+        # with grad.
+        assert batch['obs'].shape[0] == 1
+        assert self.params['metric'] == 'loss'
+
+        batch = multi_repeat(batch, self.ensemble_size)
+        input_act, input_obs, input_length = self.preprocess(batch)
+
+        if self.normalizer:
+            input_obs = self.normalizer['obs'].normalize(input_obs)
+            input_act = self.normalizer['action'].normalize(input_act)
+
+        if self.need_padding:
+            # [B, T, 1] to make obs_act dim even.
+            input_pad = [torch.zeros((*input_act.shape[:-1], 1), device=self.device, dtype=input_act.dtype)]
+        else:
+            input_pad = []
+
+
+        # [Batch, Time, Obs] + [Batch, Time, Act] => [Batch, Time, ObsAct]
+        obs_act = torch.cat([input_obs, input_act] + input_pad, axis=-1)
+        obs_act.requires_grad = True
+        latent_z, jacobian = self.net(obs_act.transpose(2, 1))
+        jacobian = torch.sum(jacobian, dim=tuple(range(1, jacobian.dim())))
+        loss = get_loss_per_sample(latent_z, jacobian)
+        grad_obs_act = torch.autograd.grad(loss, obs_act)[0]
+        self.cached_anomaly_segmentation = (grad_obs_act, loss, batch['length'])
+
+    def clear_segment_anomaly(self):
+        self.cached_anomaly_segmentation = None
+

@@ -1,5 +1,10 @@
 import torch.nn as nn
 
+
+class DummyScheduler:
+    def step(): return
+
+
 class SafetyModel(nn.Module):
     def check_safety_runner(self, batch):
         """
@@ -13,6 +18,9 @@ class SafetyModel(nn.Module):
     
     def reset(self):
         pass
+
+    def get_scheduler(self, optimizer):
+        return DummyScheduler()
 
     def forward(self, batch):
         raise NotImplementedError()
