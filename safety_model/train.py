@@ -21,7 +21,7 @@ def save_tensor(out_path: str, tensor, max_writes=None):
 
     if out_path not in TENSOR_FILES:
         TENSOR_FILES[out_path] = (open(out_path, "w"), 0)
-    
+
     f, num_writes = TENSOR_FILES[out_path]
     if max_writes is None or num_writes < max_writes:
         f.write(f"\n shape={tensor.shape} mean={tensor.float().mean()} \n {tensor}")
@@ -48,7 +48,7 @@ class StatsLogger:
                 experiment_name = Path(experiment_path).stem
             else:
                 experiment_name = None
-            wandb.init(project=(project if project else "anomaly", name=experiment_name)
+            wandb.init(project=(project if project else "anomaly"), name=experiment_name)
             self.wandb = wandb
         elif backend == "tb":
             assert experiment_path is not None, "for tb, specify experiment_path"
