@@ -169,3 +169,10 @@ HYDRA_FULL_ERROR=1 PYTHONPATH="." python eval.py -d cuda --n_tests 200 -c /home/
 
 PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --zarr_path teleop_datasets/FeedingJaco-v1.zarr/ --test_parquet_path parquet_datasets/feeding_250_test.parquet --save_path feeding_250_ensemble_state_prediction_sm_To1_Ta1_H2_O1_.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
 PYTHONPATH="." python diffusion_policy/scripts/assistive_train_safety_model.py --env_type BedBathing --zarr_path /home/aty/Data/AssistiveDiffusion/Datasets/BedBathing_ppo.zarr/ --test_parquet_path parquet_datasets/bed_bathing_test.parquet --save_path bed_bathing_ensemble_state_prediction_sm_To1_Ta1_H2_O1.pth --horizon 2 --out_obs_horizon 1 --in_obs_horizon 1 --in_act_horizon 1 --model_type state_predictor --ensemble_size 5
+
+# safety model data
+
+# Download all datasets
+../gdrive files download 1Np7ZCli4qJZELWWmGH-MgsxsGuecf4NM --recursive --destination .
+../gdrive files download 1tndEZ3m_MpQ68DxWK-PTEd9I6UPYRyht --recursive --destination AssistiveDiffusion/
+

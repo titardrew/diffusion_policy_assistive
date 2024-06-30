@@ -398,7 +398,8 @@ def train(
                 pad=False,
                 env_type=env_type,
             )
-    
+
+    save_state_dict = False
     if "state_predictor" in model_type:
         from safety_model.state_prediction import EnsembleStatePredictionSM
         DEVICE = device
@@ -452,6 +453,7 @@ def train(
         from safety_model.mvt_flow import MVTFlowSM
         assert ensemble_size == 1, "MVT-Flow does not use ensembling!"
         assert full_episode, "MVT-Flow does not support non full episode mode!"
+        save_state_dict = True
         safety_model = MVTFlowSM(
             observation_size=observation_size,
             action_size=action_size,
@@ -613,13 +615,13 @@ def train(
         for k, v in test_metrics.items():
             mean_test_metrics[k] = np.mean(v)
         return mean_test_metrics
-    
-    def _save(epoch=None):
-        Path(save_path).parent.mkdir(exist_ok=True)
+
+    def _save(save_path, save_state_dict=False, epoch=None):
+        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         epoch = epoch if epoch else "final"
         save_path = save_path.format(epoch=epoch)
         assert Path(save_path).parent.exists(), save_path
-        if isinstance(safety_model, MVTFlowSM):
+        if save_state_dict:
             torch.save(safety_model.state_dict(), save_path)
         else:
             torch.save(safety_model, save_path)
@@ -662,10 +664,9 @@ def train(
                 test_loss_dict = _test_epoch()
                 stats_logger.add_test_metrics(test_loss_dict, iteration=i_epoch)
         if save_freq > 0 and i_epoch % save_freq == 1:
-            _save(i_epoch)
-        
+            _save(save_path, save_state_dict, i_epoch)
 
-    _save()
+    _save(save_path, save_state_dict)
     stats_logger.finish()
 
 if __name__ == "__main__":

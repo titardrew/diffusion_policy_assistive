@@ -2,7 +2,7 @@ import torch.nn as nn
 
 
 class DummyScheduler:
-    def step(): return
+    def step(self): return
 
 
 class SafetyModel(nn.Module):
