@@ -44,7 +44,11 @@ class StatsLogger:
 
         if backend == "wandb":
             import wandb
-            wandb.init(project=project if project else "anomaly")
+            if experiment_path is not None:
+                experiment_name = Path(experiment_path).stem
+            else:
+                experiment_name = None
+            wandb.init(project=(project if project else "anomaly", name=experiment_name)
             self.wandb = wandb
         elif backend == "tb":
             assert experiment_path is not None, "for tb, specify experiment_path"

@@ -23,6 +23,7 @@ def run(start_from: int = 0, exp_name=EXP_NAME):
         config = dict(
             project=f"{name}",
             save_path=f"trained_models/{name}/{exp_name}" + "/model_{epoch}.pth",
+            experiment_path=f"{exp_name}",
 
             zarr_path=entry.zarr_path,
             test_parquet_path=entry.test_parquet_path,
