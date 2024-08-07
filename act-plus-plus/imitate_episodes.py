@@ -56,7 +56,7 @@ def main(args):
         from constants import SIM_TASK_CONFIGS
         task_config = SIM_TASK_CONFIGS[task_name]
     else:
-        from aloha_scripts.constants import TASK_CONFIGS
+        from robot.robot_scripts.constants import TASK_CONFIGS
         task_config = TASK_CONFIGS[task_name]
     dataset_dir = task_config['dataset_dir']
     # num_episodes = task_config['num_episodes']
@@ -64,11 +64,11 @@ def main(args):
     camera_names = task_config['camera_names']
     stats_dir = task_config.get('stats_dir', None)
     sample_weights = task_config.get('sample_weights', None)
-    train_ratio = task_config.get('train_ratio', 0.99)
+    train_ratio = task_config.get('train_ratio', 0.97)
     name_filter = task_config.get('name_filter', lambda n: True)
 
     # fixed parameters
-    state_dim = 14
+    state_dim = 6
     lr_backbone = 1e-5
     backbone = 'resnet18'
     if policy_class == 'ACT':
@@ -89,14 +89,14 @@ def main(args):
                          'vq': args['use_vq'],
                          'vq_class': args['vq_class'],
                          'vq_dim': args['vq_dim'],
-                         'action_dim': 16,
+                         'action_dim': 8,
                          'no_encoder': args['no_encoder'],
                          }
     elif policy_class == 'Diffusion':
 
         policy_config = {'lr': args['lr'],
                          'camera_names': camera_names,
-                         'action_dim': 16,
+                         'action_dim': 8,
                          'observation_horizon': 1,
                          'action_horizon': 8,
                          'prediction_horizon': args['chunk_size'],
@@ -145,7 +145,8 @@ def main(args):
     config_path = os.path.join(ckpt_dir, 'config.pkl')
     expr_name = ckpt_dir.split('/')[-1]
     if not is_eval:
-        wandb.init(project="mobile-aloha2", reinit=True, entity="mobile-aloha2", name=expr_name)
+        wandb.login()
+        wandb.init(project="real-assistive-feeding", reinit=True, name=expr_name)
         wandb.config.update(config)
     with open(config_path, 'wb') as f:
         pickle.dump(config, f)
@@ -230,14 +231,17 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
     ckpt_dir = config['ckpt_dir']
     state_dim = config['state_dim']
     real_robot = config['real_robot']
+    mobile_robot = False
     policy_class = config['policy_class']
     onscreen_render = config['onscreen_render']
+    onscreen_render = onscreen_render and (not real_robot)
     policy_config = config['policy_config']
     camera_names = config['camera_names']
     max_timesteps = config['episode_len']
     task_name = config['task_name']
     temporal_agg = config['temporal_agg']
-    onscreen_cam = 'angle'
+    #onscreen_cam = 'angle'
+    onscreen_cam = 'cam_high'
     vq = config['policy_config']['vq']
     actuator_config = config['actuator_config']
     use_actuator_net = actuator_config['actuator_network_dir'] is not None
@@ -297,7 +301,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
     if real_robot:
         from robot.robot_scripts.robot_utils import move_grippers
         from robot.robot_scripts.real_env import make_real_env
-        env = make_real_env(init_node=True, setup_robots=True, setup_base=True)
+        env = make_real_env(init_node=True, setup_robots=True, setup_base=mobile_robot)
         env_max_reward = 0
     else:
         from sim_env import make_sim_env
@@ -308,7 +312,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
     if temporal_agg:
         query_frequency = 1
         num_queries = policy_config['num_queries']
-    if real_robot:
+    if real_robot and mobile_robot:
         BASE_DELAY = 13
         query_frequency -= BASE_DELAY
 
@@ -336,7 +340,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
 
         ### evaluation loop
         if temporal_agg:
-            all_time_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, 16]).cuda()
+            all_time_actions = torch.zeros([max_timesteps, max_timesteps+num_queries, 7]).cuda()
 
         # qpos_history = torch.zeros((1, max_timesteps, state_dim)).cuda()
         qpos_history_raw = np.zeros((max_timesteps, state_dim))
@@ -397,7 +401,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
                             all_actions = policy(qpos, curr_image)
                         # if use_actuator_net:
                         #     collect_base_action(all_actions, norm_episode_all_base_actions)
-                        if real_robot:
+                        if real_robot and mobile_robot:
                             all_actions = torch.cat([all_actions[:, :-BASE_DELAY, :-2], all_actions[:, BASE_DELAY:, -2:]], dim=2)
                     if temporal_agg:
                         all_time_actions[[t], t:t+num_queries] = all_actions
@@ -419,7 +423,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
                         all_actions = policy(qpos, curr_image)
                         # if use_actuator_net:
                         #     collect_base_action(all_actions, norm_episode_all_base_actions)
-                        if real_robot:
+                        if real_robot and mobile_robot:
                             all_actions = torch.cat([all_actions[:, :-BASE_DELAY, :-2], all_actions[:, BASE_DELAY:, -2:]], dim=2)
                     raw_action = all_actions[:, t % query_frequency]
                 elif config['policy_class'] == "CNNMLP":
@@ -454,7 +458,7 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
 
                 ### step the environment
                 time5 = time.time()
-                if real_robot:
+                if real_robot and mobile_robot:
                     ts = env.step(target_qpos, base_action)
                 else:
                     ts = env.step(target_qpos)
@@ -478,7 +482,9 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
             print(f'Avg fps {max_timesteps / (time.time() - time0)}')
             plt.close()
         if real_robot:
-            move_grippers([env.puppet_bot_left, env.puppet_bot_right], [PUPPET_GRIPPER_JOINT_OPEN] * 2, move_time=0.5)  # open
+            #move_grippers([env.puppet_bot_left, env.puppet_bot_right], [PUPPET_GRIPPER_JOINT_OPEN] * 2, move_time=0.5)  # open
+            move_grippers([env.puppet_bot], [PUPPET_GRIPPER_JOINT_OPEN], move_time=0.5)  # open
+
             # save qpos_history_raw
             log_id = get_auto_index(ckpt_dir)
             np.save(os.path.join(ckpt_dir, f'qpos_{log_id}.npy'), qpos_history_raw)

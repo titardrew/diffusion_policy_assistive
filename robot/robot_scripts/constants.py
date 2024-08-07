@@ -1,16 +1,20 @@
-### Task parameters
+import pathlib
+import os
 
-DATA_DIR = '/Data/demonstrations/'
+### Task parameters
+SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
+DEFAULT_DATA_DIR = str(SCRIPT_DIR.parent.parent / "datasets")
+DATA_DIR = os.getenv("DATA_DIR", default=DEFAULT_DATA_DIR)
 TASK_CONFIGS = {
     'test_pickup':{
         'dataset_dir': DATA_DIR + '/test_pickup',
-        'num_episodes': 50,
+        'num_episodes': 100,
         'episode_len': 1000,
         'camera_names': ['cam_high']
     },
     'test_feeding':{
         'dataset_dir': DATA_DIR + '/test_feeding',
-        'num_episodes': 50,
+        'num_episodes': 150,
         'episode_len': 1300,
         'camera_names': ['cam_high']
     },

@@ -2,78 +2,62 @@ import pathlib
 import os
 
 ### Task parameters
-DATA_DIR = '/home/zfu/interbotix_ws/src/act/data' if os.getlogin() == 'zfu' else '/scr/tonyzhao/datasets'
+SCRIPT_DIR = pathlib.Path(__file__).parent.absolute()
+DEFAULT_DATA_DIR = str(SCRIPT_DIR.parent / "datasets")
+DATA_DIR = os.getenv("DATA_DIR", default=DEFAULT_DATA_DIR)
 SIM_TASK_CONFIGS = {
-    'sim_transfer_cube_scripted':{
-        'dataset_dir': DATA_DIR + '/sim_transfer_cube_scripted',
-        'num_episodes': 50,
-        'episode_len': 400,
-        'camera_names': ['top', 'left_wrist', 'right_wrist']
+    'test_pickup':{
+        'dataset_dir': DATA_DIR + '/test_pickup',
+        'num_episodes': 100,
+        'episode_len': 1000,
+        'camera_names': ['cam_high']
     },
-
-    'sim_transfer_cube_human':{
-        'dataset_dir': DATA_DIR + '/sim_transfer_cube_human',
-        'num_episodes': 50,
-        'episode_len': 400,
-        'camera_names': ['top']
+    'test_feeding':{
+        'dataset_dir': DATA_DIR + '/test_feeding',
+        'num_episodes': 150,
+        'episode_len': 1300,
+        'camera_names': ['cam_high']
     },
-
-    'sim_insertion_scripted': {
-        'dataset_dir': DATA_DIR + '/sim_insertion_scripted',
-        'num_episodes': 50,
-        'episode_len': 400,
-        'camera_names': ['top', 'left_wrist', 'right_wrist']
-    },
-
-    'sim_insertion_human': {
-        'dataset_dir': DATA_DIR + '/sim_insertion_human',
-        'num_episodes': 50,
-        'episode_len': 500,
-        'camera_names': ['top']
-    },
-    'all': {
-        'dataset_dir': DATA_DIR + '/',
-        'num_episodes': None,
-        'episode_len': None,
-        'name_filter': lambda n: 'sim' not in n,
-        'camera_names': ['cam_high', 'cam_left_wrist', 'cam_right_wrist']
-    },
-
-    'sim_transfer_cube_scripted_mirror':{
-        'dataset_dir': DATA_DIR + '/sim_transfer_cube_scripted_mirror',
-        'num_episodes': None,
-        'episode_len': 400,
-        'camera_names': ['top', 'left_wrist', 'right_wrist']
-    },
-
-    'sim_insertion_scripted_mirror': {
-        'dataset_dir': DATA_DIR + '/sim_insertion_scripted_mirror',
-        'num_episodes': None,
-        'episode_len': 400,
-        'camera_names': ['top', 'left_wrist', 'right_wrist']
-    },
-
 }
 
 ### Simulation envs fixed constants
 DT = 0.02
 FPS = 50
-JOINT_NAMES = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
-START_ARM_POSE = [0, -0.96, 1.16, 0, -0.3, 0, 0.02239, -0.02239,  0, -0.96, 1.16, 0, -0.3, 0, 0.02239, -0.02239]
+#JOINT_NAMES = ["waist", "shoulder", "elbow", "forearm_roll", "wrist_angle", "wrist_rotate"]
+#START_ARM_POSE = [0, -0.96, 1.16, 0, -0.3, 0, 0.02239, -0.02239,  0, -0.96, 1.16, 0, -0.3, 0, 0.02239, -0.02239]
+JOINT_NAMES = ["waist", "shoulder", "elbow", "wrist_angle", "wrist_rotate"]
+START_ARM_POSE = [0, -0.96, 1.21, -0.3, 0.0, 0.31, 0.31]  # calibrated for rx200
+SLEEP_ARM_POSE = [0, -1.83, 1.61, 0.61, 0.0]  # calibrated for rx200
+ROBOT_MODEL = "rx200"
+NUM_JOINTS = len(JOINT_NAMES)
 
 XML_DIR = str(pathlib.Path(__file__).parent.resolve()) + '/assets/' # note: absolute path
 
-# Left finger position limits (qpos[7]), right_finger = -1 * left_finger
-MASTER_GRIPPER_POSITION_OPEN = 0.02417
-MASTER_GRIPPER_POSITION_CLOSE = 0.01244
-PUPPET_GRIPPER_POSITION_OPEN = 0.05800
-PUPPET_GRIPPER_POSITION_CLOSE = 0.01844
+# Left finger position limits (qpos[NUM_JOINTS+1]), right_finger = -1 * left_finger
+# RX200
+MASTER_GRIPPER_POSITION_OPEN = 0.0345
+MASTER_GRIPPER_POSITION_CLOSE = 0.015
+PUPPET_GRIPPER_POSITION_OPEN = 0.0345
+PUPPET_GRIPPER_POSITION_CLOSE = 0.015
 
-# Gripper joint limits (qpos[6])
-MASTER_GRIPPER_JOINT_OPEN = -0.8
-MASTER_GRIPPER_JOINT_CLOSE = -1.65
-PUPPET_GRIPPER_JOINT_OPEN = 1.4910
-PUPPET_GRIPPER_JOINT_CLOSE = -0.6213
+# ALOHA
+# MASTER_GRIPPER_POSITION_OPEN = 0.02417
+# MASTER_GRIPPER_POSITION_CLOSE = 0.01244
+# PUPPET_GRIPPER_POSITION_OPEN = 0.05800
+# PUPPET_GRIPPER_POSITION_CLOSE = 0.01844
+
+# Gripper joint limits (qpos[NUM_JOINTS])
+MASTER_GRIPPER_JOINT_OPEN = 0.997
+MASTER_GRIPPER_JOINT_CLOSE = -0.3774
+PUPPET_GRIPPER_JOINT_OPEN = 0.997
+PUPPET_GRIPPER_JOINT_CLOSE = -0.3774
+
+# ALOHA
+# MASTER_GRIPPER_JOINT_OPEN = 0.3083
+# MASTER_GRIPPER_JOINT_CLOSE = -0.6842
+# PUPPET_GRIPPER_JOINT_OPEN = 1.4910
+# PUPPET_GRIPPER_JOINT_CLOSE = -0.6213
+
 
 ############################ Helper functions ############################
 
