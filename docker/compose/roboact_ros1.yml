@@ -1,0 +1,26 @@
+services:
+  roboact_assistive_ros1_20_04:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile_act
+    container_name: roboact_assistive
+    tty: true
+    stdin_open: true # docker run -i
+    privileged: true
+    working_dir: /opt/diffusion_policy_assistive
+    volumes:
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
+      - /home/aty/Data:/Data
+      - ../..:/opt/diffusion_policy_assistive
+    device_cgroup_rules:
+      - 'c 81:* rmw'
+      - 'c 189:* rmw'
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    runtime: nvidia

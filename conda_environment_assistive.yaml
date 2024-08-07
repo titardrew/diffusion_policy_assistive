@@ -68,10 +68,16 @@ dependencies:
     - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
     - dm-control==1.0.9
     - "pydantic<2"
+    # for mvt-flow
     - scikit-learn
     - fastparquet
     - pandas
     - FrEIA @ git+https://github.com/VLL-HD/FrEIA@14484f1f875d5c4fedb9c4ff9d7eaa3f276bf150
     - ood_metrics
-
-    # In the very end
+    # for real
+    - pyrealsense2==2.51.1.4348
+    - spnav @ https://github.com/cheng-chi/spnav/archive/c1c938ebe3cc542db4685e0d13850ff1abfdb943.tar.gz
+    - ur-rtde==1.5.5
+    - atomics==1.0.2
+    - pynput==1.7.6
+    - modern_robotics

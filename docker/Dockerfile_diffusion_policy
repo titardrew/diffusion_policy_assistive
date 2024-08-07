@@ -1,0 +1,18 @@
+FROM cuda_11_6_ros1_20_04_base:latest
+
+COPY conda_environment_assistive.yaml /opt/
+
+# Submodules are installed separately.
+COPY submodules/assistive-gym /opt/submodules/assistive-gym
+
+# Installing micromamba environment and pythonic dependencies.
+RUN source "${HOME}/.bashrc" \
+    && eval "$(micromamba shell hook --shell bash)" \
+    && cd /opt \
+    && micromamba create -y -n robo-assistive -f /opt/conda_environment_assistive.yaml
+
+# Installing ROS python packages.
+RUN source "${HOME}/.bashrc" \
+    && eval "$(micromamba shell hook --shell bash)" \
+    && micromamba activate robo-assistive \
+    && pip install roslibpy
